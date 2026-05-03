@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# 支持 python sql_analysis/parser.py 直接执行
+if __name__ == "__main__" and __package__ is None:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from sqlglot import exp, parse_one
 from sqlglot.errors import ErrorLevel
 
@@ -492,3 +499,40 @@ def parse_sql(sql: str) -> dict:
         "hierarchy": hierarchy,
         "error": None,
     }
+
+
+if __name__ == "__main__":
+    import json
+
+    import easygui
+
+    filepath = easygui.fileopenbox(
+        title="选择要解析的 SQL 文件",
+        filetypes=[["*.sql", "SQL files"]],
+    )
+    if filepath is None:
+        sys.exit(0)
+
+    with open(filepath, encoding="utf-8") as f:
+        sql = f.read()
+    result = parse_sql(sql)
+
+    save = easygui.ynbox(
+        title="输出结果",
+        msg="是否将解析结果输出到本地文件？",
+    )
+    output_json = json.dumps(result, indent=2, ensure_ascii=False)
+    if save:
+        input_path = Path(filepath)
+        output_path = input_path.parent / f"{input_path.stem}_parsed.json"
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(output_json)
+        easygui.msgbox(
+            msg=f"解析完成，结果已保存至：\n{output_path}",
+            title="完成",
+        )
+    else:
+        easygui.msgbox(
+            msg=f"解析完成。\n\n解析结果：\n{output_json[:2000]}",
+            title="完成",
+        )
