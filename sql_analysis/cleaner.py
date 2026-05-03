@@ -39,3 +39,40 @@ def clean_sql(sql: str) -> str:
             result_parts.append(token.text)
 
     return " ".join(result_parts)
+
+
+if __name__ == "__main__":
+    import sys
+    from pathlib import Path
+
+    import easygui
+
+    filepath = easygui.fileopenbox(
+        title="选择要清洗的 SQL 文件",
+        filetypes=[["*.sql", "SQL files"]],
+    )
+    if filepath is None:
+        sys.exit(0)
+
+    with open(filepath, encoding="utf-8") as f:
+        sql = f.read()
+    cleaned = clean_sql(sql)
+
+    save = easygui.ynbox(
+        title="输出结果",
+        msg="是否将清洗结果输出到本地文件？",
+    )
+    if save:
+        input_path = Path(filepath)
+        output_path = input_path.parent / f"{input_path.stem}_cleaned.sql"
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(cleaned)
+        easygui.msgbox(
+            msg=f"清洗完成，结果已保存至：\n{output_path}",
+            title="完成",
+        )
+    else:
+        easygui.msgbox(
+            msg=f"清洗完成。\n\n清洗后的 SQL：\n{cleaned[:2000]}",
+            title="完成",
+        )

@@ -96,6 +96,15 @@ wheels = [
 ]
 
 [[package]]
+name = "easygui"
+version = "0.98.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/cc/ad/e35f7a30272d322be09dc98592d2f55d27cc933a7fde8baccbbeb2bd9409/easygui-0.98.3.tar.gz", hash = "sha256:d653ff79ee1f42f63b5a090f2f98ce02335d86ad8963b3ce2661805cafe99a04", size = 85583, upload-time = "2022-04-01T13:15:50.752Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8e/a7/b276ff776533b423710a285c8168b52551cb2ab0855443131fdc7fd8c16f/easygui-0.98.3-py2.py3-none-any.whl", hash = "sha256:33498710c68b5376b459cd3fc48d1d1f33822139eb3ed01defbc0528326da3ba", size = 92655, upload-time = "2022-04-01T13:15:49.568Z" },
+]
+
+[[package]]
 name = "iniconfig"
 version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -166,6 +175,7 @@ name = "sql-analysis"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "easygui" },
     { name = "sqlglot" },
 ]
 
@@ -176,7 +186,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "sqlglot", specifier = ">=25.0.0" }]
+requires-dist = [
+    { name = "easygui", specifier = ">=0.98" },
+    { name = "sqlglot", specifier = ">=25.0.0" },
+]
 
 [package.metadata.requires-dev]
 dev = [
