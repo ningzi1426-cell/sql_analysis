@@ -87,9 +87,22 @@ parse_sql(sql) → clean_sql(sql) → parse_one(cleaned, read="oracle")
 
 ---
 
+### Decision 6: easygui 做 GUI 入口，不引入 Web 框架
+**Choice**: 使用 easygui 提供文件选择对话框和确认对话框，在 cleaner.py 和 parser.py 末尾追加 `if __name__ == '__main__'` 块
+**Rationale**: easygui 是纯 Python 的轻量 GUI 库，无需浏览器、无 Web 服务、无复杂框架依赖。`fileopenbox()` 选择文件、`ynbox()` 确认输出，API 简单直接。`__main__` 块仅在使用 `python xxx.py` 时触发，不改变模块被 import 时的行为。
+**Implications**: 新增 easygui 依赖；`__main__` 块代码不参与单元测试（仅 GUI 触发），不影响现有 38 个测试。
+
+### Decision 7: 输出文件与输入文件同目录
+**Choice**: 输出文件默认保存在输入 SQL 文件所在目录，无需用户额外指定路径
+**Rationale**: 简化交互流程，减少用户操作步骤（少一个路径选择框）。用户只需确认是否输出，不需要选择输出位置。
+**Implications**: 输出文件名规范为 `<原文件名>_cleaned.sql`（cleaner）和 `<原文件名>_parsed.json`（parser）。
+
+---
+
 ## Dependencies
 
 - **sqlglot >= 25.0.0** — SQL 解析与 AST 遍历
+- **easygui >= 0.98** — GUI 文件选择与确认对话框
 - **Python 3.12+** — dataclass（slots）、`str | None` 联合类型语法
 - **uv** — 虚拟环境与依赖管理
 - **pytest + pytest-cov**（dev）— 测试与覆盖率

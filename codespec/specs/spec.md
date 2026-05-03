@@ -240,6 +240,32 @@ in a machine-readable format containing all identified elements.
 
 <!-- Add more requirements following the same pattern -->
 
+### FR-007: GUI 直接执行入口
+
+The system shall provide a direct GUI entry point for cleaner.py and parser.py,
+allowing users to launch the modules via `python sql_analysis/cleaner.py` or
+`python sql_analysis/parser.py` (or `python -m` equivalents).
+
+#### Scenario: cleaner.py GUI 启动与清洗输出
+- **GIVEN** 用户通过 `python sql_analysis/cleaner.py` 或 `python -m sql_analysis.cleaner` 启动模块
+- **WHEN** 模块运行时弹出 easygui 文件选择对话框
+- **THEN** 用户可选择单个 SQL 文件，随后弹出确认对话框询问是否输出结果到本地文件；确认后清洗结果保存至 SQL 文件所在目录，文件名为 `<原文件名>_cleaned.sql`
+
+#### Scenario: parser.py GUI 启动与解析输出
+- **GIVEN** 用户通过 `python sql_analysis/parser.py` 或 `python -m sql_analysis.parser` 启动模块
+- **WHEN** 模块运行时弹出 easygui 文件选择对话框
+- **THEN** 用户可选择单个 SQL 文件，随后弹出确认对话框询问是否输出结果到本地文件；确认后 JSON 解析结果保存至 SQL 文件所在目录，文件名为 `<原文件名>_parsed.json`
+
+#### Scenario: 用户取消文件选择
+- **GIVEN** 用户通过任一模块启动 GUI
+- **WHEN** 用户在文件选择对话框中取消操作
+- **THEN** 程序安静退出，不输出任何文件，不抛出异常
+
+#### Scenario: 用户选择不输出到文件
+- **GIVEN** 用户在确认对话框中选择了"否"
+- **WHEN** 程序完成处理
+- **THEN** 结果不保存到文件，程序正常退出
+
 ## Non-Functional Requirements
 <!-- Performance, security, scalability, availability requirements -->
 
