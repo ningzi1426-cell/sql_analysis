@@ -18,3 +18,24 @@
 - **TASK-007 层次结构识别 parser.py part 4（FR-004）**：嵌套树、CTE_DEF、UNION 分支、深度统计。
 - **TASK-008 parse_sql() 编排与 JSON 输出 parser.py part 5（FR-006）**：串联流程、异常处理、JSON 组装。
 - **TASK-009 完整测试套件**：覆盖全部 spec 场景 + 示例文件，覆盖率 >= 80%。
+
+## 2026-05-03 增加 GUI 直接执行入口
+
+### 变更摘要
+新增 2 项实现任务（TASK-010、TASK-011）：为 cleaner.py 和 parser.py 分别添加 `__main__` GUI 入口块，使用 easygui 实现文件选择和处理输出。
+
+### 对 tasks.md 的变更
+- **TASK-010: cleaner.py GUI 入口（FR-007）**
+  - Context: 在 cleaner.py 末尾添加 `if __name__ == '__main__'` 块，使用 easygui 实现文件选择和清洗输出
+  - Acceptance:
+    - `uv run python sql_analysis/cleaner.py` 启动 GUI，选择 SQL 文件后可清洗并输出
+    - `uv run python -m sql_analysis.cleaner` 效果同上
+    - 输出文件默认保存在输入 SQL 文件所在目录
+    - easygui 加入 pyproject.toml 依赖
+- **TASK-011: parser.py GUI 入口（FR-007）**
+  - Context: 在 parser.py 末尾添加 `if __name__ == '__main__'` 块，使用 easygui 实现文件选择、解析和 JSON 输出
+  - Acceptance:
+    - `uv run python sql_analysis/parser.py` 启动 GUI，选择 SQL 文件后可解析并输出 JSON
+    - `uv run python -m sql_analysis.parser` 效果同上
+    - 输出文件默认保存在输入 SQL 文件所在目录
+    - 现有 38 个测试不受影响，全部通过
