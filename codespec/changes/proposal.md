@@ -1,29 +1,31 @@
-[PROCESSED: 2026-05-02]
-# Proposal: 单条 SQL 解析功能
+[PROCESSED: 2026-05-03]
+
+# Proposal: 增加 GUI 直接执行入口
 
 ## 需求描述
-实现 SQL 批量分析工具的第一部分：解析单条 SQL，识别并结构化输出其中的表、字段、关联关系和层次结构。
+为 cleaner.py 和 parser.py 增加 `if __name__ == '__main__'` 块，使用户可以直接通过 `python sql_analysis/cleaner.py` 或 `python sql_analysis/parser.py` 启动 GUI 界面运行模块。GUI 使用 easygui 实现，无需浏览器或复杂框架。
 
-具体包括：
-- FR-001：提取表引用（含 schema、别名、类型）
-- FR-002：提取字段引用（含限定符、位置索引、跨子查询边界）
-- FR-003：识别 JOIN 关联关系（含隐式连接、Oracle (+) 语法）
-- FR-004：识别层次结构（子查询嵌套、CTE、UNION 分支）
-- FR-005：清洗参数和变量占位符（`&XXX`、`:XXX`）
-- FR-006：输出结构化 JSON，含错误处理
-
-技术栈：Python 3.12+ / uv / sqlglot
+交互流程：
+1. 弹出文件选择对话框，让用户选择单个待处理的 SQL 文件
+2. 弹出确认对话框，询问是否将结果输出到本地文件（默认保存到 SQL 文件所在目录）
+3. cleaner.py 将清洗后的 SQL 输出；parser.py 将结构化 JSON 输出
 
 ## 影响范围
-- spec（已完成需求编写）
-- design（已完成架构设计）
-- tasks（已完成任务拆解）
+- spec.md（新增 FR-007：GUI 直接执行入口）
+- design.md（新增 easygui 依赖说明、`__main__` 块设计）
+- tasks.md（新增 2 个实现任务）
+- pyproject.toml（新增 easygui 依赖）
+- sql_analysis/cleaner.py（新增 `__main__` 块）
+- sql_analysis/parser.py（新增 `__main__` 块）
 
 ## 验收标准
-- `uv run pytest` 全绿，覆盖率 >= 80%
-- 所有 spec 场景（FR-001 ~ FR-006 共 24 个 Scenario）有对应测试
-- `examples/688.sql` 和 `examples/union.sql` 作为输入可产生正确的结构化 JSON
-- `uv run python -c "from sql_analysis import parse_sql"` 正常导入
+- `uv run python sql_analysis/cleaner.py` 启动 GUI，选择 SQL 文件后可清洗并输出
+- `uv run python sql_analysis/parser.py` 启动 GUI，选择 SQL 文件后可解析并输出 JSON
+- `uv run python -m sql_analysis.cleaner` 效果同上
+- `uv run python -m sql_analysis.parser` 效果同上
+- 输出文件默认保存在输入 SQL 文件所在目录
+- 现有 38 个测试不受影响，全部通过
+- easygui 作为可选依赖或核心依赖加入 pyproject.toml
 
 ## 变更边界
-单一关注点：单条 SQL 的结构化解析。第二部分（相似度聚类）不在本次变更范围内。
+仅涉及 GUI 启动入口。不修改 cleaner.py 和 parser.py 的现有函数逻辑，不引入 Web 框架。
