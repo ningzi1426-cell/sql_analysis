@@ -19,7 +19,9 @@ htmlcov/
 
 # Claude
 .claude/
-CLAUDE.md
+
+# Examples
+examples/
 
 # OS
 .DS_Store
