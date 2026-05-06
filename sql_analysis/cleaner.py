@@ -35,6 +35,9 @@ def clean_sql(sql: str) -> str:
                 result_parts.append("(1 = 1)")
             else:
                 result_parts.append(token.text)
+        elif token.token_type == TokenType.STRING:
+            # 保留字符串引号：token.text 不含引号，需重新包裹
+            result_parts.append(f"'{token.text}'")
         else:
             result_parts.append(token.text)
 
