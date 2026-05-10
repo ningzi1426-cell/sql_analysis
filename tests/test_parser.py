@@ -20,7 +20,7 @@ class TestTableExtraction:
         assert tables[0]["name"] == "users"
         assert tables[0]["schema"] is None
         assert tables[0]["table_type"] == "BASE_TABLE"
-        assert tables[0]["alias"] is None
+        assert tables[0]["alias"] == "users"
 
     def test_schema_prefix(self):
         """带 schema 前缀的表名。"""

@@ -2,6 +2,7 @@
 
 __version__ = "0.1.0"
 
+from sql_analysis.cleaner import normalize_aliases
 from sql_analysis.models import (
     ColumnRef,
     ColumnRefType,
@@ -21,5 +22,6 @@ __all__ = [
     "JoinType",
     "TableRef",
     "TableType",
+    "normalize_aliases",
     "parse_sql",
 ]

@@ -1,7 +1,9 @@
-"""FR-005: 清洗 SQL 中的参数和变量占位符。"""
+"""FR-005: 清洗 SQL 中的参数和变量占位符；FR-008: 别名规范化。"""
 
 from __future__ import annotations
 
+from sqlglot import exp, parse_one
+from sqlglot.errors import ErrorLevel
 from sqlglot.tokens import TokenType, Tokenizer
 
 
@@ -42,6 +44,72 @@ def clean_sql(sql: str) -> str:
             result_parts.append(token.text)
 
     return " ".join(result_parts)
+
+
+def normalize_aliases(sql: str) -> str:
+    """确保 SQL 中所有表引用都有独一无二的别名。
+
+    无别名的表自动以表名作为别名；别名重复的表追加数字后缀去重。
+    基于 AST 遍历和修改，避免误改字符串/注释中的内容。
+
+    Args:
+        sql: 待规范化的 SQL 字符串。
+
+    Returns:
+        别名规范化后的 SQL 字符串。
+    """
+    try:
+        ast = parse_one(sql, read="oracle", error_level=ErrorLevel.RAISE)
+    except Exception:
+        return sql
+
+    seen: dict[str, int] = {}
+
+    for node in ast.walk():
+        if isinstance(node, exp.Table):
+            old_alias = node.alias
+            if old_alias:
+                if old_alias in seen:
+                    seen[old_alias] += 1
+                    new_alias = f"{old_alias}_{seen[old_alias]}"
+                    node.set(
+                        "alias",
+                        exp.TableAlias(this=exp.to_identifier(new_alias)),
+                    )
+                else:
+                    seen[old_alias] = 1
+            else:
+                name = _table_name_str(node)
+                if name in seen:
+                    seen[name] += 1
+                    alias_name = f"{name}_{seen[name]}"
+                else:
+                    seen[name] = 1
+                    alias_name = name
+                node.set(
+                    "alias",
+                    exp.TableAlias(this=exp.to_identifier(alias_name)),
+                )
+        elif isinstance(node, exp.Subquery):
+            old_alias = node.alias
+            if old_alias:
+                if old_alias in seen:
+                    seen[old_alias] += 1
+                    new_alias = f"{old_alias}_{seen[old_alias]}"
+                    node.set(
+                        "alias",
+                        exp.TableAlias(this=exp.to_identifier(new_alias)),
+                    )
+                else:
+                    seen[old_alias] = 1
+
+    return ast.sql(dialect="oracle")
+
+
+def _table_name_str(node: exp.Table) -> str:
+    """获取 Table 节点的表名（字符串形式）。"""
+    name = node.name
+    return name if isinstance(name, str) else str(name)
 
 
 if __name__ == "__main__":

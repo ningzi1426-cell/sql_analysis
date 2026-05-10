@@ -12,7 +12,7 @@ if __name__ == "__main__" and __package__ is None:
 from sqlglot import exp, parse_one
 from sqlglot.errors import ErrorLevel
 
-from sql_analysis.cleaner import clean_sql
+from sql_analysis.cleaner import clean_sql, normalize_aliases
 from sql_analysis.models import (
     ColumnRef,
     ColumnRefType,
@@ -448,9 +448,12 @@ def parse_sql(sql: str) -> dict:
     # FR-005: 清洗参数/变量占位符
     cleaned = clean_sql(sql)
 
+    # FR-008: 别名规范化
+    normalized = normalize_aliases(cleaned)
+
     # 解析 SQL
     try:
-        ast = parse_one(cleaned, read="oracle", error_level=ErrorLevel.RAISE)
+        ast = parse_one(normalized, read="oracle", error_level=ErrorLevel.RAISE)
     except Exception as exc:
         return {
             "tables": None,
