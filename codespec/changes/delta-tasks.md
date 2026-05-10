@@ -69,11 +69,10 @@
 
 ### 对 tasks.md 的变更
 - **TASK-014: 实现 Column 别名传播（FR-008 修复）**
-  - Context: 在 `cleaner.py` 中新增 `_propagate_column_alias()`、`_propagate_in_condition()`、`_update_columns_in_subtree()` 三个内部函数。修改 `normalize_aliases()` 在 `exp.Table` 和 `exp.Subquery` 的重复别名分支中各加一行调用。处理 ON 子句（显式 JOIN）和 WHERE 子句（隐式关联）中所有比较表达式。比较运算符包括 EQ/NEQ/GT/LT/GTE/LTE/Is/NullSafeEQ。递归处理 AND/OR、解包括号。
+  - Context: 在 `cleaner.py` 中新增 `_propagate_column_alias()`、`_propagate_in_condition()`、`_update_columns_in_subtree()` 三个内部函数。修改 `normalize_aliases()` 在 `exp.Table` 和 `exp.Subquery` 的重复别名分支中各加一行调用。`_propagate_column_alias` 从节点向上找所属 SELECT，遍历其 WHERE、HAVING、所有 JOIN 的 ON 子句，对比较表达式右侧 Column 同步更新。覆盖 parser 所需的所有子句。
   - Acceptance:
-    - ON 条件中比较运算符右侧 Column 随表别名同步更新
-    - WHERE 隐式关联条件中比较运算符右侧 Column 同步更新
-    - 左侧 Column 不变、SELECT 中 Column 不变（无法确定归属）
+    - ON/WHERE/HAVING 中比较运算符右侧 Column 随表别名同步更新
+    - 左侧 Column 不变、SELECT 列表中单独 Column 不变（无法确定归属）
     - 括号、AND/OR 复合条件递归处理
     - CROSS JOIN 不报错
     - 现有 50 个测试全部通过
@@ -81,6 +80,6 @@
 - **TASK-015: 测试 Column 别名传播**
   - Context: 在 `test_cleaner.py` 的 `TestNormalizeAliases` 类中新增 Column 传播相关测试
   - Acceptance:
-    - 覆盖：ON 右侧更新、WHERE 隐式关联更新、复合条件、括号、子查询别名、表达式多列更新、CROSS JOIN 跳过、无冲突不变
+    - 覆盖：ON 右侧更新、WHERE 隐式关联更新、HAVING 条件更新、复合条件、括号、子查询别名、表达式多列更新、CROSS JOIN 跳过、无冲突不变
     - 所有新测试通过
     - 覆盖率 >= 80%

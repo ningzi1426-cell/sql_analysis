@@ -86,25 +86,30 @@
 ## 2026-05-10 Column 别名传播修复
 
 ### 变更摘要
-修复 `normalize_aliases()` 的表别名重命名后 Column 引用未同步更新的缺陷。新增辅助函数，在别名重命名时同步更新 ON/WHERE 子句中所有**可确定归属**的 Column 引用。
+修复 `normalize_aliases()` 的表别名重命名后 Column 引用未同步更新的缺陷。新增辅助函数，在别名重命名时遍历所属 SELECT 的全部子句（ON、WHERE、HAVING 等），对所有可确定归属的 Column 引用同步更新。
 
 ### 对 design.md 的变更
 - **新增 Decision 11: Column 别名传播启发式**
-  - **Choice**: 当表别名被重命名时，在查询的 ON 和 WHERE 子句中查找比较表达式（`=`、`<`、`>` 等），将右侧子树中 `table` 属性匹配旧别名的 Column 更新为新别名。基于 `左表.列 = 右表.列` 约定。
-  - **Rationale**: 无 schema 信息时，比较表达式是唯一能确定 Column 归属的语法结构。此启发式覆盖显式 JOIN ON、隐式关联 WHERE、复合条件、括号包裹等场景。无法确定的 Column（如 `WHERE u.col = 1` 中的单边引用）保持原样。
-  - **Implications**: CROSS JOIN（无 ON）跳过；SELECT 列表中的 Column 不更新（无法消歧义）；识别局限性在代码注释中标明。
+  - **Choice**: 当表别名被重命名时，沿 AST 向上找到所属 SELECT 节点，遍历该 SELECT 下所有**比较表达式**（`=`、`<`、`>`、`!=` 等）。将右侧子树中 `table` 属性匹配旧别名的 Column 更新为新别名。基于 `左表.列 = 右表.列` 约定。
+  - **Rationale**: parser 会从 ON、WHERE、HAVING、SELECT 等所有子句中提取 Column。比较表达式的结构（左侧 vs 右侧）是唯一能在无 schema 情况下确定 Column 归属的 AST 特征。右侧 Column 归属右表（被重命名的表），覆盖显式 JOIN ON、隐式关联 WHERE、HAVING 条件等全部场景。
+  - **Implications**: SELECT 列表中单独的 Column 引用（如 `u.id`）无法消歧义，保留指向 FROM 表；CROSS JOIN（无 ON）跳过。
 
 - **新增三个内部辅助函数**：
-  - `_propagate_column_alias(node, old_alias, new_alias)` — 从节点出发，找到所属的 SELECT 节点，遍历其 ON/WHERE 子句
+  - `_propagate_column_alias(node, old_alias, new_alias)` — 从节点向上找到所属 SELECT，遍历其所有子句
   - `_propagate_in_condition(expr, old_alias, new_alias)` — 递归遍历条件表达式，对比较运算符的右侧子树调用更新
   - `_update_columns_in_subtree(expr, old_alias, new_alias)` — 在子树中 `find_all(exp.Column)` 并更新匹配的 `table`
 
-- **覆盖场景**：
-  - 显式 JOIN ON：`FROM t1 u JOIN t2 u ON u.a = u.b` → `u.b` → `u_2.b`
-  - 隐式关联 WHERE：`FROM t1 u, t2 u WHERE u.a = u.b` → `u.b` → `u_2.b`
-  - 复合条件 AND/OR 递归
-  - 括号解包
-  - 表达式子树：`u.a = u.b + u.c` → `u.b`, `u.c` → `u_2.b`, `u_2.c`
+- **遍历覆盖 SELECT 全部子句**：
+  - `select.args.get("where")` — WHERE 条件
+  - `select.args.get("having")` — HAVING 条件
+  - `join.args.get("on")` — 每个 JOIN 的 ON 条件
+  - `select.args.get("joins")` — JOIN 列表（含嵌套 JOIN）
+  - 子查询内部的 SELECT 递归处理（通过 `ast.walk()` 自然覆盖）
+
+- **核心逻辑**：`_propagate_in_condition` 递归处理：
+  - `exp.And` / `exp.Or` → 递归两侧
+  - `exp.Paren` → 解包
+  - 比较运算符（EQ/NEQ/GT/LT/GTE/LTE/Is/NullSafeEQ）→ 右侧子树调用 `_update_columns_in_subtree`
 
 - **normalize_aliases() 修改**：在 `exp.Table` 和 `exp.Subquery` 的重复别名分支中，`node.set("alias", ...)` 后各加一行 `_propagate_column_alias()` 调用。
 

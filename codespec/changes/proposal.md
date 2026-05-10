@@ -26,12 +26,11 @@
 - **tests/test_cleaner.py** — 新增 Column 传播相关测试
 
 ## 验收标准
-- ON 条件中比较运算符右侧的 Column 引用随表别名同步更新
-- WHERE 隐式关联条件中比较运算符右侧的 Column 引用同步更新
-- SELECT 列表中的 Column 保持不变（无 schema 无法确定归属）
+- ON/WHERE/HAVING 中比较运算符右侧的 Column 随表别名同步更新（覆盖 parser 所有输出子句）
+- SELECT 列表中单独的 Column 引用保持不变（无 schema 无法确定归属）
 - 左侧 Column 不变
 - 括号包裹的条件正确处理
 - AND/OR 复合条件递归处理
 - CROSS JOIN（无 ON）不报错
 - 现有 50 个测试全部通过
-- 新增测试覆盖：ON 右侧更新、WHERE 隐式关联、复合条件、括号、子查询别名、表达式多列
+- 新增测试覆盖：ON、WHERE、HAVING 隐式关联、复合条件、括号、子查询别名、表达式多列
