@@ -44,3 +44,13 @@
   - **Scenario: 包含 CTE 的表别名处理** — GIVEN SQL 为 `WITH active AS (SELECT id FROM users) SELECT * FROM active` / WHEN 调用别名规范化 / THEN CTE 名称 `active` 在引用处作为别名保留，CTE 内部 `users` 无别名时自动获得别名 `users`
   - **Scenario: 混合场景（部分有别名、部分无别名、部分重复）** — GIVEN SQL 为 `SELECT * FROM users a JOIN orders a JOIN products ON a.id = products.id` / WHEN 调用别名规范化 / THEN `users` 保留别名 `a`，`orders` 的重复别名 `a` 被重命名为 `a_2`，`products` 获得别名 `products`
   - **Scenario: 规范化后 SQL 仍可正常解析** — GIVEN 任意合法输入 SQL / WHEN 别名规范化完成后 / THEN 输出 SQL 可被 sqlglot 正常解析，且后续 `parse_sql()` 流程不受影响
+
+## 2026-05-10 Column 别名传播修复
+
+### 变更摘要
+修复 FR-008 中 `normalize_aliases()` 的缺陷：当表别名被重命名时，同步更新 ON 子句中关联 Column 的 `table` 属性。采用 JOIN ON 右式约定启发式（比较运算符右侧 Column 归属右表）。
+
+### 对 spec.md 的变更
+- **修改 FR-008 Scenario: 别名重复的表自动去重**：THEN 子句增强为「第二个别名 `u` 被重命名为 `u_2`，且 ON 条件中引用该表的字段前缀同步更新为 `u_2`」
+- **新增 Scenario: ON 条件中字段引用随别名同步更新** — GIVEN SQL 为 `SELECT u.id FROM users u JOIN orders u ON u.id = u.uid` / WHEN 调用别名规范化 / THEN `u.uid` 更新为 `u_2.uid`，`u.id`（等式左侧）保持不变
+- **新增 Scenario: 复合 ON 条件中字段引用分别更新** — GIVEN SQL 为 `SELECT * FROM t1 u JOIN t2 u ON u.a = u.b AND u.c = u.d` / WHEN 调用别名规范化 / THEN 右侧 `u.b` 和 `u.d` 分别更新为 `u_2.b` 和 `u_2.d`

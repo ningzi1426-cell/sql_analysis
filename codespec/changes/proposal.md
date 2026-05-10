@@ -1,28 +1,36 @@
 [PROCESSED: 2026-05-10]
 
-# Proposal: cleaner 别名规范化
+# Proposal: Column 别名传播修复
 
 ## 需求描述
-为 cleaner 增加别名规范化功能，确保 SQL 中所有表引用都有独一无二的别名。目的是让后续分析流程能从别名唯一还原到具体的 schema 和表名（即别名到 `schema.table` 的映射是 1:1 的）。
+修复 `normalize_aliases()` 的缺陷：当表别名被重命名（如重复别名 `u` → `u_2`）时，ON 子句中引用旧别名的 Column 节点也应同步更新，使字段引用能唯一关联到对应的表。
 
-至少处理以下场景：
-1. **原 SQL 中表没有别名** — 自动生成别名
-2. **原 SQL 中表别名出现重复** — 去重，为重复别名生成唯一变体
+当前行为：
+```sql
+-- 输入: SELECT u.id, u.name FROM users u JOIN orders u ON u.id = u.uid
+-- 当前输出: SELECT u.id, u.name FROM users u JOIN orders u_2 ON u.id = u.uid
+-- 问题: u.uid 的 Column.table 仍为 "u"，应指向 orders(u_2) 却指向了 users(u)
+```
 
-该功能作为 `clean_sql()` 之后、`parse_one()` 之前的独立处理步骤，集成到 `parse_sql()` 调用链中。
+期望行为：
+```sql
+-- 输出: SELECT u.id, u.name FROM users u JOIN orders u_2 ON u.id = u_2.uid
+```
+
+采用 JOIN ON 右式约定启发式：比较运算符右侧的 Column 归属右表（被重命名的表）。
 
 ## 影响范围
-- **spec.md** — 新增 FR-008：别名规范化
-- **design.md** — 新增 Decision：别名生成策略与 AST 改写方案
-- **tasks.md** — 新增 2 个实现任务（实现 + 测试）
-- **sql_analysis/cleaner.py** — 新增 `normalize_aliases()` 函数
-- **sql_analysis/parser.py** — `parse_sql()` 调用链中插入 `normalize_aliases()`
-- **tests/test_cleaner.py** — 新增别名规范化相关测试用例
+- **spec.md** — 修改 FR-008 Scenario 2，新增 Column 同步验收条件
+- **design.md** — 新增 Decision 11：Column 传播启发式策略
+- **tasks.md** — 新增 TASK-014、TASK-015
+- **sql_analysis/cleaner.py** — 新增 3 个辅助函数 + 2 处调用点
+- **tests/test_cleaner.py** — 新增 Column 传播相关测试
 
 ## 验收标准
-- 无别名的表自动获得别名（以表名自身为别名）
-- 别名重复的表自动获得唯一别名（追加数字后缀）
-- 同一张物理表多次引用时，各自别名保持唯一
-- `normalize_aliases()` 输出的 SQL 可被 sqlglot 正常解析
-- 现有 38 个测试不受影响，全部通过
-- 新增测试覆盖：无别名、别名重复、混合场景、CTE、子查询
+- ON 条件中比较运算符右侧的 Column 引用随表别名同步更新
+- SELECT/WHERE 中的 Column 保持不变（无 schema 无法消歧义）
+- 括号包裹的 ON 条件正确处理
+- AND/OR 复合条件递归处理
+- CROSS JOIN（无 ON）不报错
+- 现有 50 个测试全部通过
+- 新增测试覆盖：ON 右侧更新、复合条件、括号、子查询别名

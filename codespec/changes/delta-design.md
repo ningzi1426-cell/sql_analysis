@@ -82,3 +82,38 @@
     - 覆盖：无别名表、别名重复、混合场景、CTE、子查询、无冲突保持原样
     - 所有新测试通过
     - 覆盖率 >= 80%
+
+## 2026-05-10 Column 别名传播修复
+
+### 变更摘要
+修复 `normalize_aliases()` 的表别名重命名后 Column 引用未同步更新的缺陷。新增 3 个辅助函数，在别名重命名时同步更新 JOIN ON 子句中的 Column 引用。
+
+### 对 design.md 的变更
+- **新增 Decision 11: ON 子句 Column 别名传播启发式**
+  - **Choice**: 当表别名被重命名时，对包含该表的 JOIN ON 子句中的比较表达式，将右侧子树中所有 `table` 属性匹配旧别名的 Column 更新为新别名。基于 `左表.列 = 右表.列` 约定。
+  - **Rationale**: 无 schema 信息时无法 100% 确定 Column 归属。此启发式覆盖绝大多数实际 SQL 写法，是完全自动化的最佳折中。
+  - **Implications**: CROSS JOIN 跳过；SELECT/WHERE 中的 Column 不更新（无法消歧义，保留指向 FROM 表）。
+
+- **新增三个内部辅助函数**：
+  - `_propagate_column_alias(node, old_alias, new_alias)` — 从节点向上查 JOIN 祖先，提取 ON 子句
+  - `_propagate_in_on_expression(expr, old_alias, new_alias)` — 递归遍历 ON 表达式，对比较运算符调用更新
+  - `_update_columns_in_subtree(expr, old_alias, new_alias)` — 在子树中查找并更新匹配 Column
+
+- **normalize_aliases() 修改**：在 `exp.Table` 和 `exp.Subquery` 的重复别名分支中，`node.set("alias", ...)` 后各加一行 `_propagate_column_alias()` 调用。
+
+### 对 tasks.md 的变更
+- **TASK-014: 实现 Column 别名传播（FR-008 修复）**
+  - Context: 在 `cleaner.py` 中新增 `_propagate_column_alias()`、`_propagate_in_on_expression()`、`_update_columns_in_subtree()` 三个内部函数。修改 `normalize_aliases()` 两处调用点。处理 AND/OR、括号、比较运算符等各种表达式形态。
+  - Acceptance:
+    - ON 条件中比较运算符右侧 Column 随表别名同步更新
+    - 左侧 Column 不变、SELECT 中 Column 不变
+    - 括号、复合条件正确处理
+    - CROSS JOIN 不报错
+    - 现有 50 个测试全部通过
+
+- **TASK-015: 测试 Column 别名传播**
+  - Context: 在 `test_cleaner.py` 中新增 Column 传播相关测试
+  - Acceptance:
+    - 覆盖：ON 右侧更新、复合条件、括号、子查询别名、CROSS JOIN、无冲突不变
+    - 所有新测试通过
+    - 覆盖率 >= 80%

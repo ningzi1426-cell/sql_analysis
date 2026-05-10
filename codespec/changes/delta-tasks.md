@@ -61,3 +61,25 @@
     - 覆盖：无别名表、别名重复、同表不同别名不冲突、CTE、子查询、混合场景、输出可解析
     - 所有新测试通过
     - 覆盖率 >= 80%
+
+## 2026-05-10 Column 别名传播修复
+
+### 变更摘要
+新增 2 项实现任务（TASK-014、TASK-015）：修复 `normalize_aliases()` 中表别名重命名后 Column 引用未同步更新的缺陷，并编写完整测试覆盖。
+
+### 对 tasks.md 的变更
+- **TASK-014: 实现 Column 别名传播（FR-008 修复）**
+  - Context: 在 `cleaner.py` 中新增 `_propagate_column_alias()`、`_propagate_in_on_expression()`、`_update_columns_in_subtree()` 三个内部函数。修改 `normalize_aliases()` 在 `exp.Table` 和 `exp.Subquery` 的重复别名分支中各加一行调用。处理 AND/OR、括号、比较运算符（EQ/NEQ/GT/LT/GTE/LTE/Is/NullSafeEQ）等各种表达式形态。
+  - Acceptance:
+    - ON 条件中比较运算符右侧 Column 随表别名同步更新
+    - 左侧 Column 不变、SELECT 中 Column 不变
+    - 括号、复合条件正确处理
+    - CROSS JOIN 不报错
+    - 现有 50 个测试全部通过
+
+- **TASK-015: 测试 Column 别名传播**
+  - Context: 在 `test_cleaner.py` 的 `TestNormalizeAliases` 类中新增 Column 传播相关测试
+  - Acceptance:
+    - 覆盖：ON 右侧更新、复合条件、括号、子查询别名、CROSS JOIN、无冲突不变、表达式中的多列更新
+    - 所有新测试通过
+    - 覆盖率 >= 80%
