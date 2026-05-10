@@ -1,4 +1,4 @@
-current_node: 4-complete
+current_node: 5
 change_name: "Column 别名传播修复"
 started_at: "2026-05-10"
 last_updated: "2026-05-10"
