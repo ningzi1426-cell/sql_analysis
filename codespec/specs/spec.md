@@ -280,7 +280,22 @@ When SQL 语句被清洗后、解析前, the system shall normalize table aliase
 #### Scenario: 别名重复的表自动去重
 - **GIVEN** 输入 SQL 为 `SELECT * FROM users u JOIN orders u ON u.id = u.uid`
 - **WHEN** 调用别名规范化
-- **THEN** 第二个别名 `u` 被重命名为 `u_2`（或等价唯一后缀），字段引用中的别名同步更新
+- **THEN** 第二个别名 `u` 被重命名为 `u_2`（或等价唯一后缀），且所有比较表达式中引用该表的字段前缀同步更新为 `u_2`（如 ON 中的 `u.uid` → `u_2.uid`）
+
+#### Scenario: ON 条件中字段引用同步更新
+- **GIVEN** 输入 SQL 为 `SELECT u.id FROM users u JOIN orders u ON u.id = u.uid`
+- **WHEN** 调用别名规范化
+- **THEN** `u.uid`（比较表达式右侧）更新为 `u_2.uid`，`u.id`（左侧）保持不变
+
+#### Scenario: WHERE 隐式关联中字段引用同步更新
+- **GIVEN** 输入 SQL 为 `SELECT * FROM t1 u, t2 u WHERE u.a = u.b`
+- **WHEN** 调用别名规范化
+- **THEN** `u.b`（比较表达式右侧）更新为 `u_2.b`，`u.a`（左侧）保持不变
+
+#### Scenario: 复合条件和括号中字段引用递归更新
+- **GIVEN** ON/WHERE/HAVING 中包含 AND/OR 复合条件或括号包裹的比较表达式
+- **WHEN** 调用别名规范化
+- **THEN** 递归处理所有嵌套比较表达式，每个比较运算符右侧的 Column 同步更新
 
 #### Scenario: 同一张物理表多次引用时别名保持唯一
 - **GIVEN** 输入 SQL 为 `SELECT pr.prod_code, pr2.prod_code FROM dwrdim.dwr_dim_product_d pr LEFT JOIN dwrdim.dwr_dim_product_d pr2 ON pr.parent_key = pr2.prod_key`

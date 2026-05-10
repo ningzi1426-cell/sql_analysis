@@ -112,6 +112,11 @@ parse_sql(sql) → clean_sql(sql) → normalize_aliases(cleaned) → parse_one(n
 **Rationale**: 直接修改 AST 对象比字符串替换更安全，避免误改注释/字符串中的内容。
 **Implications**: 需注意 `exp.Subquery` 的别名设置方式可能与 `exp.Table` 不同。CTE 引用也需作为表引用参与别名检测。
 
+### Decision 11: ON/WHERE/HAVING Column 别名传播启发式
+**Choice**: 当表别名被重命名时，沿 AST 向上找到所属 SELECT 节点，遍历其 WHERE、HAVING 及所有 JOIN 的 ON 子句中的比较表达式（`=`、`<`、`>`、`!=`、`IS` 等）。将右侧子树中 `table` 匹配旧别名的 Column 更新为新别名。基于 `左表.列 = 右表.列` 约定。
+**Rationale**: parser 从 ON、WHERE、HAVING 等子句中提取 Column 引用。比较表达式的左右结构是唯一能在无 schema 情况下确定 Column 归属的 AST 特征。右侧 Column 归属右表（被重命名的表）。
+**Implications**: 新增 `_propagate_column_alias()`、`_propagate_in_condition()`、`_update_columns_in_subtree()` 三个内部函数。SELECT 列表中单独的 Column（如 `u.id`）无法消歧义，保留原样。CROSS JOIN 跳过。
+
 ---
 
 ## Dependencies
