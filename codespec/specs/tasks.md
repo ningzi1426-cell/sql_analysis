@@ -49,8 +49,8 @@
 
 ## Column 别名传播修复（FR-008）
 
-- [ ] **TASK-014**: 实现 Column 别名传播（FR-008 修复）
-  - Context: 在 `cleaner.py` 中新增 `_propagate_column_alias()`、`_propagate_in_condition()`、`_update_columns_in_subtree()` 三个内部函数。修改 `normalize_aliases()` 在 `exp.Table` 和 `exp.Subquery` 的重复别名分支中各加一行调用。`_propagate_column_alias` 从节点向上找所属 SELECT，遍历其 WHERE、HAVING、所有 JOIN 的 ON 子句，对比较表达式右侧 Column 同步更新。
+- [x] **TASK-014**: 实现 Column 别名传播（FR-008 修复） — 完成于 2026-05-10
+  - Context: 在 `cleaner.py` 中新增 `_propagate_column_alias()`、`_propagate_in_condition()`、`_update_columns_in_subtree()` 三个内部函数。修改 `normalize_aliases()` 在 `exp.Table` 和 `exp.Subquery` 的重复别名分支中各加一行调用。`_propagate_column_alias` 从节点向上找所属 JOIN 的 ON 子句 + 所属 SELECT 的 WHERE/HAVING 子句，对比较表达式右侧 Column 同步更新。
   - Acceptance:
     - ON/WHERE/HAVING 中比较运算符右侧 Column 随表别名同步更新
     - 左侧 Column 不变、SELECT 列表中单独 Column 不变
@@ -58,8 +58,8 @@
     - CROSS JOIN 不报错
     - 现有 50 个测试全部通过
 
-- [ ] **TASK-015**: 测试 Column 别名传播
-  - Context: 在 `test_cleaner.py` 的 `TestNormalizeAliases` 类中新增 Column 传播相关测试
+- [x] **TASK-015**: 测试 Column 别名传播 — 完成于 2026-05-10
+  - Context: 在 `test_cleaner.py` 中新增 `TestColumnPropagation` 类，覆盖 11 个测试
   - Acceptance:
     - 覆盖：ON 右侧更新、WHERE 隐式关联更新、HAVING 条件更新、复合条件、括号、子查询别名、表达式多列更新、CROSS JOIN 跳过、无冲突不变
     - 所有新测试通过

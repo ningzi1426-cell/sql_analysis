@@ -76,6 +76,7 @@ def normalize_aliases(sql: str) -> str:
                         "alias",
                         exp.TableAlias(this=exp.to_identifier(new_alias)),
                     )
+                    _propagate_column_alias(node, old_alias, new_alias)
                 else:
                     seen[old_alias] = 1
             else:
@@ -100,6 +101,7 @@ def normalize_aliases(sql: str) -> str:
                         "alias",
                         exp.TableAlias(this=exp.to_identifier(new_alias)),
                     )
+                    _propagate_column_alias(node, old_alias, new_alias)
                 else:
                     seen[old_alias] = 1
 
@@ -110,6 +112,87 @@ def _table_name_str(node: exp.Table) -> str:
     """获取 Table 节点的表名（字符串形式）。"""
     name = node.name
     return name if isinstance(name, str) else str(name)
+
+
+def _propagate_column_alias(
+    node: exp.Table | exp.Subquery,
+    old_alias: str,
+    new_alias: str,
+) -> None:
+    """将别名重命名传播到相关子句中的 Column 引用。
+
+    对 JOIN ON：仅传播到当前节点所属 JOIN 的 ON 子句。
+    对 WHERE/HAVING：传播到所属 SELECT 的 WHERE/HAVING 子句。
+
+    Args:
+        node: 别名被重命名的 Table 或 Subquery 节点。
+        old_alias: 原始别名。
+        new_alias: 新别名。
+    """
+    select = node.find_ancestor(exp.Select)
+    if select is None:
+        return
+
+    # 仅处理当前节点所属 JOIN 的 ON 子句
+    join = node.find_ancestor(exp.Join)
+    if join is not None:
+        on_expr = join.args.get("on")
+        if on_expr is not None:
+            _propagate_in_condition(on_expr, old_alias, new_alias)
+
+    # WHERE 子句
+    where = select.args.get("where")
+    if where is not None:
+        _propagate_in_condition(where.this, old_alias, new_alias)
+
+    # HAVING 子句
+    having = select.args.get("having")
+    if having is not None:
+        _propagate_in_condition(having.this, old_alias, new_alias)
+
+
+def _propagate_in_condition(
+    expr: exp.Expression,
+    old_alias: str,
+    new_alias: str,
+) -> None:
+    """递归遍历条件表达式，对比较运算符右侧 Column 进行别名更新。
+
+    Args:
+        expr: 条件表达式节点。
+        old_alias: 要匹配的旧别名。
+        new_alias: 替换后的新别名。
+    """
+    if isinstance(expr, (exp.And, exp.Or)):
+        _propagate_in_condition(expr.this, old_alias, new_alias)
+        _propagate_in_condition(expr.expression, old_alias, new_alias)
+    elif isinstance(expr, exp.Paren):
+        _propagate_in_condition(expr.this, old_alias, new_alias)
+    elif isinstance(
+        expr,
+        (exp.EQ, exp.NEQ, exp.GT, exp.LT, exp.GTE, exp.LTE, exp.Is, exp.NullSafeEQ),
+    ):
+        _update_columns_in_subtree(expr.expression, old_alias, new_alias)
+
+
+def _update_columns_in_subtree(
+    expr: exp.Expression,
+    old_alias: str,
+    new_alias: str,
+) -> None:
+    """更新子树中所有匹配旧别名的 Column 节点。
+
+    Args:
+        expr: 表达式子树根节点。
+        old_alias: 要匹配的旧别名。
+        new_alias: 替换后的新别名。
+    """
+    for col in expr.find_all(exp.Column):
+        t = col.args.get("table")
+        if t is not None:
+            t_str = t if isinstance(t, str) else str(t)
+            if t_str == old_alias:
+                col.set("table", exp.to_identifier(new_alias))
 
 
 if __name__ == "__main__":

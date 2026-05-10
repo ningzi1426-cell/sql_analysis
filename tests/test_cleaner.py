@@ -214,3 +214,138 @@ class TestNormalizeAliases:
         cleaned = clean_sql(sql_union)
         result = normalize_aliases(cleaned)
         sqlglot.parse_one(result)
+
+
+class TestColumnPropagation:
+    """FR-008 修复: Column 别名传播。"""
+
+    def test_on_clause_right_side_updated(self):
+        """ON 条件比较表达式右侧 Column 同步更新。"""
+        from sql_analysis.cleaner import normalize_aliases
+
+        result = normalize_aliases(
+            "SELECT u.id, u.name FROM users u JOIN orders u ON u.id = u.uid"
+        )
+        assert "u_2.uid" in result
+        assert "u.id" in result  # 左侧不变
+        sqlglot.parse_one(result)
+
+    def test_where_implicit_join_updated(self):
+        """WHERE 隐式关联中右侧 Column 同步更新。"""
+        from sql_analysis.cleaner import normalize_aliases
+
+        result = normalize_aliases(
+            "SELECT * FROM t1 u, t2 u WHERE u.a = u.b"
+        )
+        assert "u_2.b" in result
+        assert "u.a" in result  # 左侧不变
+        sqlglot.parse_one(result)
+
+    def test_compound_and_conditions(self):
+        """AND 复合条件中每个比较表达式分别处理。"""
+        from sql_analysis.cleaner import normalize_aliases
+
+        result = normalize_aliases(
+            "SELECT * FROM t1 u JOIN t2 u ON u.a = u.b AND u.c = u.d"
+        )
+        assert "u_2.b" in result
+        assert "u_2.d" in result
+        assert "u.a" in result  # 左侧不变
+        assert "u.c" in result  # 左侧不变
+        sqlglot.parse_one(result)
+
+    def test_paren_wrapped_on(self):
+        """括号包裹的 ON 条件正确处理。"""
+        from sql_analysis.cleaner import normalize_aliases
+
+        result = normalize_aliases(
+            "SELECT * FROM t1 u JOIN t2 u ON (u.a = u.b)"
+        )
+        assert "u_2.b" in result
+        sqlglot.parse_one(result)
+
+    def test_expression_right_side(self):
+        """表达式子树中多列全部更新。"""
+        from sql_analysis.cleaner import normalize_aliases
+
+        result = normalize_aliases(
+            "SELECT * FROM t1 u JOIN t2 u ON u.a = u.b + u.c"
+        )
+        assert "u_2.b" in result
+        assert "u_2.c" in result
+        sqlglot.parse_one(result)
+
+    def test_select_columns_unchanged(self):
+        """SELECT 列表中单独 Column 不更新（无法消歧义）。"""
+        from sql_analysis.cleaner import normalize_aliases
+
+        result = normalize_aliases(
+            "SELECT u.id, u.name FROM users u JOIN orders u ON u.id = u.uid"
+        )
+        # SELECT 中的列保持原别名
+        ast = sqlglot.parse_one(result)
+        from sqlglot import exp
+        cols = [
+            (c.args.get("table"), c.name)
+            for c in ast.find_all(exp.Column)
+        ]
+        # 找出 SELECT 中的 u.id 和 u.name
+        select_cols = [
+            (t, n) for t, n in cols
+            if n in ("id", "name") and t in ("u", "u_2")
+        ]
+        assert all(t == "u" for t, _ in select_cols)
+
+    def test_cross_join_no_on(self):
+        """CROSS JOIN 无 ON 条件，不报错。"""
+        from sql_analysis.cleaner import normalize_aliases
+
+        result = normalize_aliases(
+            "SELECT * FROM t1 u CROSS JOIN t2 u"
+        )
+        sqlglot.parse_one(result)
+
+    def test_no_duplicate_no_change(self):
+        """无别名冲突时不传播，Column 保持原样。"""
+        from sql_analysis.cleaner import normalize_aliases
+
+        result = normalize_aliases(
+            "SELECT * FROM users a JOIN orders b ON a.id = b.uid"
+        )
+        assert "a.id" in result
+        assert "b.uid" in result
+        sqlglot.parse_one(result)
+
+    def test_duplicate_subquery_alias_columns(self):
+        """子查询别名冲突时 Column 同步更新。"""
+        from sql_analysis.cleaner import normalize_aliases
+
+        result = normalize_aliases(
+            "SELECT * FROM (SELECT 1 AS x) u "
+            "JOIN (SELECT 2 AS y) u ON u.x = u.y"
+        )
+        assert "u_2.y" in result
+        sqlglot.parse_one(result)
+
+    def test_nested_joins_column_propagation(self):
+        """嵌套 JOIN 中每个 ON 分别处理。"""
+        from sql_analysis.cleaner import normalize_aliases
+
+        result = normalize_aliases(
+            "SELECT * FROM t1 u JOIN t2 u ON u.a = u.b "
+            "JOIN t3 u ON u.c = u.d"
+        )
+        assert "u_2.b" in result
+        assert "u_3.d" in result
+        sqlglot.parse_one(result)
+
+    def test_having_clause_updated(self):
+        """HAVING 条件中右侧 Column 同步更新。"""
+        from sql_analysis.cleaner import normalize_aliases
+
+        result = normalize_aliases(
+            "SELECT SUM(u.a) FROM t1 u JOIN t2 u ON u.x = u.y "
+            "GROUP BY 1 HAVING u.x = u.y"
+        )
+        assert "u_2.y" in result  # ON 中的更新
+        sqlglot.parse_one(result)
