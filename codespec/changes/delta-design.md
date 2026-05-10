@@ -86,18 +86,25 @@
 ## 2026-05-10 Column 别名传播修复
 
 ### 变更摘要
-修复 `normalize_aliases()` 的表别名重命名后 Column 引用未同步更新的缺陷。新增 3 个辅助函数，在别名重命名时同步更新 JOIN ON 子句中的 Column 引用。
+修复 `normalize_aliases()` 的表别名重命名后 Column 引用未同步更新的缺陷。新增辅助函数，在别名重命名时同步更新 ON/WHERE 子句中所有**可确定归属**的 Column 引用。
 
 ### 对 design.md 的变更
-- **新增 Decision 11: ON 子句 Column 别名传播启发式**
-  - **Choice**: 当表别名被重命名时，对包含该表的 JOIN ON 子句中的比较表达式，将右侧子树中所有 `table` 属性匹配旧别名的 Column 更新为新别名。基于 `左表.列 = 右表.列` 约定。
-  - **Rationale**: 无 schema 信息时无法 100% 确定 Column 归属。此启发式覆盖绝大多数实际 SQL 写法，是完全自动化的最佳折中。
-  - **Implications**: CROSS JOIN 跳过；SELECT/WHERE 中的 Column 不更新（无法消歧义，保留指向 FROM 表）。
+- **新增 Decision 11: Column 别名传播启发式**
+  - **Choice**: 当表别名被重命名时，在查询的 ON 和 WHERE 子句中查找比较表达式（`=`、`<`、`>` 等），将右侧子树中 `table` 属性匹配旧别名的 Column 更新为新别名。基于 `左表.列 = 右表.列` 约定。
+  - **Rationale**: 无 schema 信息时，比较表达式是唯一能确定 Column 归属的语法结构。此启发式覆盖显式 JOIN ON、隐式关联 WHERE、复合条件、括号包裹等场景。无法确定的 Column（如 `WHERE u.col = 1` 中的单边引用）保持原样。
+  - **Implications**: CROSS JOIN（无 ON）跳过；SELECT 列表中的 Column 不更新（无法消歧义）；识别局限性在代码注释中标明。
 
 - **新增三个内部辅助函数**：
-  - `_propagate_column_alias(node, old_alias, new_alias)` — 从节点向上查 JOIN 祖先，提取 ON 子句
-  - `_propagate_in_on_expression(expr, old_alias, new_alias)` — 递归遍历 ON 表达式，对比较运算符调用更新
-  - `_update_columns_in_subtree(expr, old_alias, new_alias)` — 在子树中查找并更新匹配 Column
+  - `_propagate_column_alias(node, old_alias, new_alias)` — 从节点出发，找到所属的 SELECT 节点，遍历其 ON/WHERE 子句
+  - `_propagate_in_condition(expr, old_alias, new_alias)` — 递归遍历条件表达式，对比较运算符的右侧子树调用更新
+  - `_update_columns_in_subtree(expr, old_alias, new_alias)` — 在子树中 `find_all(exp.Column)` 并更新匹配的 `table`
+
+- **覆盖场景**：
+  - 显式 JOIN ON：`FROM t1 u JOIN t2 u ON u.a = u.b` → `u.b` → `u_2.b`
+  - 隐式关联 WHERE：`FROM t1 u, t2 u WHERE u.a = u.b` → `u.b` → `u_2.b`
+  - 复合条件 AND/OR 递归
+  - 括号解包
+  - 表达式子树：`u.a = u.b + u.c` → `u.b`, `u.c` → `u_2.b`, `u_2.c`
 
 - **normalize_aliases() 修改**：在 `exp.Table` 和 `exp.Subquery` 的重复别名分支中，`node.set("alias", ...)` 后各加一行 `_propagate_column_alias()` 调用。
 

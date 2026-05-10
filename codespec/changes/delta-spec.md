@@ -48,9 +48,10 @@
 ## 2026-05-10 Column 别名传播修复
 
 ### 变更摘要
-修复 FR-008 中 `normalize_aliases()` 的缺陷：当表别名被重命名时，同步更新 ON 子句中关联 Column 的 `table` 属性。采用 JOIN ON 右式约定启发式（比较运算符右侧 Column 归属右表）。
+修复 FR-008 中 `normalize_aliases()` 的缺陷：当表别名被重命名时，同步更新 ON / WHERE 子句中所有**可确定归属**的 Column 的 `table` 属性。采用比较表达式右式约定启发式（比较运算符右侧 Column 归属被重命名的表）。覆盖场景：显式 JOIN ON、隐式关联 WHERE、复合条件、括号、表达式子树。
 
 ### 对 spec.md 的变更
-- **修改 FR-008 Scenario: 别名重复的表自动去重**：THEN 子句增强为「第二个别名 `u` 被重命名为 `u_2`，且 ON 条件中引用该表的字段前缀同步更新为 `u_2`」
-- **新增 Scenario: ON 条件中字段引用随别名同步更新** — GIVEN SQL 为 `SELECT u.id FROM users u JOIN orders u ON u.id = u.uid` / WHEN 调用别名规范化 / THEN `u.uid` 更新为 `u_2.uid`，`u.id`（等式左侧）保持不变
-- **新增 Scenario: 复合 ON 条件中字段引用分别更新** — GIVEN SQL 为 `SELECT * FROM t1 u JOIN t2 u ON u.a = u.b AND u.c = u.d` / WHEN 调用别名规范化 / THEN 右侧 `u.b` 和 `u.d` 分别更新为 `u_2.b` 和 `u_2.d`
+- **修改 FR-008 Scenario: 别名重复的表自动去重**：THEN 子句增强为「第二个别名 `u` 被重命名为 `u_2`，且所有比较表达式中引用该表的字段前缀同步更新为 `u_2`」
+- **新增 Scenario: ON 条件中字段引用同步更新** — GIVEN `SELECT u.id FROM users u JOIN orders u ON u.id = u.uid` / WHEN 调用别名规范化 / THEN `u.uid` → `u_2.uid`，`u.id`（左侧）不变
+- **新增 Scenario: WHERE 隐式关联中字段引用同步更新** — GIVEN `SELECT * FROM t1 u, t2 u WHERE u.a = u.b` / WHEN 调用别名规范化 / THEN `u.b` → `u_2.b`，`u.a` 不变
+- **新增 Scenario: 复合条件和括号正确处理** — GIVEN ON/WHERE 含 AND/OR/括号 / WHEN 调用别名规范化 / THEN 递归处理所有比较表达式
