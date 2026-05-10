@@ -266,6 +266,47 @@ allowing users to launch the modules via `python sql_analysis/cleaner.py` or
 - **WHEN** 程序完成处理
 - **THEN** 结果不保存到文件，程序正常退出
 
+---
+
+### FR-008: 别名规范化
+
+When SQL 语句被清洗后、解析前, the system shall normalize table aliases to ensure every table reference has a unique alias, enabling unambiguous mapping from alias back to schema and table name.
+
+#### Scenario: 无别名的表自动获得别名
+- **GIVEN** 输入 SQL 为 `SELECT id FROM users`
+- **WHEN** 调用别名规范化
+- **THEN** `users` 获得别名 `users`，输出 SQL 中 `FROM users` 变为 `FROM users AS users`
+
+#### Scenario: 别名重复的表自动去重
+- **GIVEN** 输入 SQL 为 `SELECT * FROM users u JOIN orders u ON u.id = u.uid`
+- **WHEN** 调用别名规范化
+- **THEN** 第二个别名 `u` 被重命名为 `u_2`（或等价唯一后缀），字段引用中的别名同步更新
+
+#### Scenario: 同一张物理表多次引用时别名保持唯一
+- **GIVEN** 输入 SQL 为 `SELECT pr.prod_code, pr2.prod_code FROM dwrdim.dwr_dim_product_d pr LEFT JOIN dwrdim.dwr_dim_product_d pr2 ON pr.parent_key = pr2.prod_key`
+- **WHEN** 调用别名规范化
+- **THEN** 两个表引用的别名 `pr` 和 `pr2` 均保持原样不冲突，无需修改
+
+#### Scenario: 包含子查询的表别名处理
+- **GIVEN** 输入 SQL 为 `SELECT a.id, b.total FROM users a JOIN (SELECT user_id FROM orders) b ON a.id = b.user_id`
+- **WHEN** 调用别名规范化
+- **THEN** 派生表别名 `b` 不变，`users` 别名 `a` 不变
+
+#### Scenario: 包含 CTE 的表别名处理
+- **GIVEN** 输入 SQL 为 `WITH active AS (SELECT id FROM users) SELECT * FROM active`
+- **WHEN** 调用别名规范化
+- **THEN** CTE 名称 `active` 在引用处作为别名保留，CTE 内部 `users` 无别名时自动获得别名 `users`
+
+#### Scenario: 混合场景（部分有别名、部分无别名、部分重复）
+- **GIVEN** 输入 SQL 为 `SELECT * FROM users a JOIN orders a JOIN products ON a.id = products.id`
+- **WHEN** 调用别名规范化
+- **THEN** `users` 保留别名 `a`，`orders` 的重复别名 `a` 被重命名为 `a_2`，`products` 获得别名 `products`
+
+#### Scenario: 规范化后 SQL 仍可正常解析
+- **GIVEN** 任意合法输入 SQL
+- **WHEN** 别名规范化完成后
+- **THEN** 输出 SQL 可被 sqlglot 正常解析，且后续 `parse_sql()` 流程不受影响
+
 ## Non-Functional Requirements
 <!-- Performance, security, scalability, availability requirements -->
 

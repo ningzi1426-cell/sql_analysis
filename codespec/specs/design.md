@@ -76,7 +76,7 @@ ParseResult: tables[], columns[], joins[], hierarchy{}, error?
 ## Parse Flow
 
 ```
-parse_sql(sql) → clean_sql(sql) → parse_one(cleaned, read="oracle")
+parse_sql(sql) → clean_sql(sql) → normalize_aliases(cleaned) → parse_one(normalized, read="oracle")
     → 一次 AST 遍历:
         _extract_tables()      → FR-001
         _extract_columns()     → FR-002
@@ -96,6 +96,21 @@ parse_sql(sql) → clean_sql(sql) → parse_one(cleaned, read="oracle")
 **Choice**: 输出文件默认保存在输入 SQL 文件所在目录，无需用户额外指定路径
 **Rationale**: 简化交互流程，减少用户操作步骤（少一个路径选择框）。用户只需确认是否输出，不需要选择输出位置。
 **Implications**: 输出文件名规范为 `<原文件名>_cleaned.sql`（cleaner）和 `<原文件名>_parsed.json`（parser）。
+
+### Decision 8: `normalize_aliases()` 作为独立函数
+**Choice**: 在 `cleaner.py` 中新增 `normalize_aliases(sql: str) -> str` 函数，基于 sqlglot AST 遍历修改表别名，返回规范化后的 SQL 字符串。
+**Rationale**: 与现有 `clean_sql()` 职责分离（清洗占位符 vs 规范化别名），各自独立可测试。`normalize_aliases()` 需要 AST 级别的信息（表名、别名、作用域），不适合 tokenizer 方案。
+**Implications**: `cleaner.py` 新增 sqlglot `parse_one` / `exp` 相关导入；`parse_sql()` 调用链变为 `clean_sql()` → `normalize_aliases()` → `parse_one()`。
+
+### Decision 9: 别名生成策略
+**Choice**: 无别名时以表名自身作为别名；别名重复时追加数字后缀 `_2`、`_3`...（第一个保留原名）。
+**Rationale**: 表名作为别名语义清晰，便于人工阅读；数字后缀简单直接，不会与现有别名冲突。
+**Implications**: 别名冲突检测需维护已见别名集合，按表在 SQL 中出现的顺序分配。
+
+### Decision 10: AST 改写方式
+**Choice**: 遍历 `exp.Table` 和 `exp.Subquery` 节点，对需要修改别名的节点设置 `alias` 属性，通过 `ast.sql(dialect="oracle")` 输出修改后的 SQL。
+**Rationale**: 直接修改 AST 对象比字符串替换更安全，避免误改注释/字符串中的内容。
+**Implications**: 需注意 `exp.Subquery` 的别名设置方式可能与 `exp.Table` 不同。CTE 引用也需作为表引用参与别名检测。
 
 ---
 
