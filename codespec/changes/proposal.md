@@ -1,31 +1,28 @@
-[PROCESSED: 2026-05-03]
+[PROCESSED: 2026-05-10]
 
-# Proposal: 增加 GUI 直接执行入口
+# Proposal: cleaner 别名规范化
 
 ## 需求描述
-为 cleaner.py 和 parser.py 增加 `if __name__ == '__main__'` 块，使用户可以直接通过 `python sql_analysis/cleaner.py` 或 `python sql_analysis/parser.py` 启动 GUI 界面运行模块。GUI 使用 easygui 实现，无需浏览器或复杂框架。
+为 cleaner 增加别名规范化功能，确保 SQL 中所有表引用都有独一无二的别名。目的是让后续分析流程能从别名唯一还原到具体的 schema 和表名（即别名到 `schema.table` 的映射是 1:1 的）。
 
-交互流程：
-1. 弹出文件选择对话框，让用户选择单个待处理的 SQL 文件
-2. 弹出确认对话框，询问是否将结果输出到本地文件（默认保存到 SQL 文件所在目录）
-3. cleaner.py 将清洗后的 SQL 输出；parser.py 将结构化 JSON 输出
+至少处理以下场景：
+1. **原 SQL 中表没有别名** — 自动生成别名
+2. **原 SQL 中表别名出现重复** — 去重，为重复别名生成唯一变体
+
+该功能作为 `clean_sql()` 之后、`parse_one()` 之前的独立处理步骤，集成到 `parse_sql()` 调用链中。
 
 ## 影响范围
-- spec.md（新增 FR-007：GUI 直接执行入口）
-- design.md（新增 easygui 依赖说明、`__main__` 块设计）
-- tasks.md（新增 2 个实现任务）
-- pyproject.toml（新增 easygui 依赖）
-- sql_analysis/cleaner.py（新增 `__main__` 块）
-- sql_analysis/parser.py（新增 `__main__` 块）
+- **spec.md** — 新增 FR-008：别名规范化
+- **design.md** — 新增 Decision：别名生成策略与 AST 改写方案
+- **tasks.md** — 新增 2 个实现任务（实现 + 测试）
+- **sql_analysis/cleaner.py** — 新增 `normalize_aliases()` 函数
+- **sql_analysis/parser.py** — `parse_sql()` 调用链中插入 `normalize_aliases()`
+- **tests/test_cleaner.py** — 新增别名规范化相关测试用例
 
 ## 验收标准
-- `uv run python sql_analysis/cleaner.py` 启动 GUI，选择 SQL 文件后可清洗并输出
-- `uv run python sql_analysis/parser.py` 启动 GUI，选择 SQL 文件后可解析并输出 JSON
-- `uv run python -m sql_analysis.cleaner` 效果同上
-- `uv run python -m sql_analysis.parser` 效果同上
-- 输出文件默认保存在输入 SQL 文件所在目录
+- 无别名的表自动获得别名（以表名自身为别名）
+- 别名重复的表自动获得唯一别名（追加数字后缀）
+- 同一张物理表多次引用时，各自别名保持唯一
+- `normalize_aliases()` 输出的 SQL 可被 sqlglot 正常解析
 - 现有 38 个测试不受影响，全部通过
-- easygui 作为可选依赖或核心依赖加入 pyproject.toml
-
-## 变更边界
-仅涉及 GUI 启动入口。不修改 cleaner.py 和 parser.py 的现有函数逻辑，不引入 Web 框架。
+- 新增测试覆盖：无别名、别名重复、混合场景、CTE、子查询

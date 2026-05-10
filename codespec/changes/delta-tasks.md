@@ -39,3 +39,25 @@
     - `uv run python -m sql_analysis.parser` 效果同上
     - 输出文件默认保存在输入 SQL 文件所在目录
     - 现有 38 个测试不受影响，全部通过
+
+## 2026-05-10 cleaner 别名规范化
+
+### 变更摘要
+新增 2 项实现任务（TASK-012、TASK-013）：为 cleaner.py 新增 `normalize_aliases()` 函数，集成到 `parse_sql()` 调用链，并编写完整测试覆盖。
+
+### 对 tasks.md 的变更
+- **TASK-012: 实现 `normalize_aliases()` 函数（FR-008）**
+  - Context: 在 `cleaner.py` 中新增 `normalize_aliases(sql: str) -> str`，遍历 AST 中所有表引用，为无别名表生成别名、为重复别名追加数字后缀。需处理基表（exp.Table）、派生表（exp.Subquery）、CTE 引用。别名生成策略：无别名时用表名自身；重复时追加 `_2`、`_3` 数字后缀。需同步更新 `parse_sql()` 调用链（在 `clean_sql()` 之后、`parse_one()` 之前插入）。
+  - Acceptance:
+    - 无别名表自动获得别名（表名自身）
+    - 重复别名追加数字后缀
+    - 同一物理表多次引用但别名不冲突时不做修改
+    - 输出 SQL 可被 sqlglot 解析
+    - `parse_sql()` 调用链中插入 `normalize_aliases()`，现有 38 个测试全部通过
+
+- **TASK-013: 测试别名规范化（FR-008）**
+  - Context: 在 `test_cleaner.py` 中新增测试类，覆盖 spec.md FR-008 全部 7 个 Scenario
+  - Acceptance:
+    - 覆盖：无别名表、别名重复、同表不同别名不冲突、CTE、子查询、混合场景、输出可解析
+    - 所有新测试通过
+    - 覆盖率 >= 80%

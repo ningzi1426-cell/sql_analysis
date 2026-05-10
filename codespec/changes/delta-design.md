@@ -44,3 +44,41 @@
 **接受理由**: `__main__` 块是面向用户的 GUI 入口，不是库代码路径。easygui 自身的异常对话框（exceptionbox）本身也在 easygui 事件循环中。当前行为（Python traceback 输出到控制台）对于通过命令行启动的用户来说是可接受的调试信息，与直接调用 `parse_sql()` 的错误暴露方式一致。后续可在使用中根据实际遇到的错误场景逐步完善错误提示。
 
 **影响**: 无功能影响。`__main__` 块行为不变。
+
+## 2026-05-10 cleaner 别名规范化
+
+### 变更摘要
+新增别名规范化功能，作为 `clean_sql()` 之后的独立处理步骤。使用 sqlglot AST 遍历识别所有表引用，对无别名或别名重复的表进行修正，确保别名到 `schema.table` 的映射是 1:1 的。
+
+### 对 design.md 的变更
+- **新增 Decision 8: `normalize_aliases()` 作为独立函数**
+  - **Choice**: 在 `cleaner.py` 中新增 `normalize_aliases(sql: str) -> str` 函数，基于 sqlglot AST 遍历修改表别名，返回规范化后的 SQL 字符串。
+  - **Rationale**: 与现有 `clean_sql()` 职责分离（清洗占位符 vs 规范化别名），各自独立可测试。`normalize_aliases()` 需要 AST 级别的信息（表名、别名、作用域），不适合 tokenizer 方案。
+  - **Implications**: `cleaner.py` 新增 sqlglot `parse_one` / `exp` 相关导入；`parse_sql()` 调用链变为 `clean_sql()` → `normalize_aliases()` → `parse_one()`。
+
+- **新增 Decision 9: 别名生成策略**
+  - **Choice**: 无别名时以表名自身作为别名；别名重复时追加数字后缀 `_2`、`_3`...（第一个保留原名）。
+  - **Rationale**: 表名作为别名语义清晰，便于人工阅读；数字后缀简单直接，不会与现有别名冲突。
+  - **Implications**: 别名冲突检测需维护已见别名集合，按表在 SQL 中出现的顺序分配。
+
+- **新增 Decision 10: AST 改写方式**
+  - **Choice**: 遍历 `exp.Table` 和 `exp.Subquery` 节点，对需要修改别名的节点设置 `alias` 属性，通过 `ast.sql(dialect="oracle")` 输出修改后的 SQL。
+  - **Rationale**: 直接修改 AST 对象比字符串替换更安全，避免误改注释/字符串中的内容。
+  - **Implications**: 需注意 `exp.Subquery` 的别名设置方式可能与 `exp.Table` 不同（`Subquery.args["alias"]` 是 Identifier 对象 vs `Table` 的 `alias` 属性）。CTE 引用（`exp.CTE`）也需要作为表引用参与别名检测。
+
+### 对 tasks.md 的变更
+- **TASK-012: 实现 `normalize_aliases()` 函数（FR-008）**
+  - Context: 在 `cleaner.py` 中新增 `normalize_aliases(sql: str) -> str`，遍历 AST 中所有表引用，为无别名表生成别名、为重复别名追加数字后缀。需处理基表、派生表（子查询）、CTE 引用。
+  - Acceptance:
+    - 无别名表自动获得别名（表名自身）
+    - 重复别名追加数字后缀（首个保留原名，后续为 `_2`、`_3`...）
+    - 同一物理表多次引用但别名不冲突时不做修改
+    - 输出 SQL 可被 sqlglot 解析
+    - `parse_sql()` 调用链中插入 `normalize_aliases()`，现有 38 个测试全部通过
+
+- **TASK-013: 测试别名规范化（FR-008）**
+  - Context: 在 `test_cleaner.py` 中新增别名规范化测试类
+  - Acceptance:
+    - 覆盖：无别名表、别名重复、混合场景、CTE、子查询、无冲突保持原样
+    - 所有新测试通过
+    - 覆盖率 >= 80%
