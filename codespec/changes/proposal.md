@@ -1,36 +1,41 @@
-[PROCESSED: 2026-05-10]
-
-# Proposal: Column 别名传播修复
+# Proposal: spec compliance fixes
 
 ## 需求描述
-修复 `normalize_aliases()` 的缺陷：当表别名被重命名（如重复别名 `u` → `u_2`）时，ON/WHERE 子句中所有**可确定归属**的 Column 节点应同步更新，使字段引用能唯一关联到对应的表。
 
-采用比较表达式右式约定启发式：比较运算符（`=`、`<`、`>` 等）右侧的 Column 归属被重命名的表。覆盖显式 JOIN ON 和隐式关联 WHERE 两种场景。
+修复当前实现与 `codespec/specs/spec.md` 不一致的解析行为，并补齐对应测试，确保现有代码真正满足 FR-002、FR-003、FR-004、FR-006 的验收场景。
 
-当前行为 vs 期望：
-```sql
--- 场景1（显式 JOIN ON）:
--- 输入:  SELECT u.id, u.name FROM users u JOIN orders u ON u.id = u.uid
--- 输出:  SELECT u.id, u.name FROM users u JOIN orders u_2 ON u.id = u_2.uid
+本次修复聚焦以下偏差：
 
--- 场景2（隐式关联 WHERE）:
--- 输入:  SELECT * FROM t1 u, t2 u WHERE u.a = u.b
--- 输出:  SELECT * FROM t1 u, t2 u_2 WHERE u.a = u_2.b
-```
+- FR-002：`SELECT * FROM users` 中 `*` 应记录源表 `users`。
+- FR-002：派生表外层字段（如 `SELECT id FROM (...) t`）应标记来源为派生表别名 `t`，不穿透到内部物理表。
+- FR-003：`WHERE` 条件中的隐式关联关系应返回 `IMPLICIT_JOIN`，而不是 `INNER_JOIN`。
+- FR-003：链式 JOIN 的每条关系应使用正确的相邻左/右表，而不是始终把左表设为 FROM 根表。
+- FR-004：含 CTE 的层次结构应包含 CTE 定义节点。
+- FR-006：补充预定义 JSON Schema，并验证 `parse_sql()` 输出可通过 schema 校验。
+
+不在本次范围内的内容：
+
+- 不扩展 SQL 相似度/聚类功能。
+- 不重构整体解析架构。
+- 不修改 GUI 行为，除非测试证明现有修复影响 GUI 入口。
 
 ## 影响范围
-- **spec.md** — 修改 FR-008 Scenario 2，新增 Column 同步验收条件
-- **design.md** — 新增 Decision 11：Column 传播启发式策略
-- **tasks.md** — 新增 TASK-014、TASK-015
-- **sql_analysis/cleaner.py** — 新增 3 个辅助函数 + 2 处调用点
-- **tests/test_cleaner.py** — 新增 Column 传播相关测试
+
+- **spec.md**：不新增需求，仅在必要时澄清 FR-006 的 JSON Schema 存放与校验方式。
+- **design.md**：补充实现决策，说明字段来源推断、JOIN 左表推导、CTE hierarchy、JSON Schema 的处理策略。
+- **tasks.md**：新增本次修复任务。
+- **sql_analysis/parser.py**：修复字段来源、JOIN 提取、CTE 层次结构、输出 schema 相关逻辑。
+- **sql_analysis/models.py**：如 schema 校验需要，保持数据模型字段不变；避免不必要修改。
+- **tests/test_parser.py**：收紧 FR-002/003/004/006 的断言，覆盖本次偏差。
+- **pyproject.toml**：如采用 `jsonschema` 做测试校验，则加入测试依赖；否则使用轻量本地 schema 校验，避免新增依赖。
 
 ## 验收标准
-- ON/WHERE/HAVING 中比较运算符右侧的 Column 随表别名同步更新（覆盖 parser 所有输出子句）
-- SELECT 列表中单独的 Column 引用保持不变（无 schema 无法确定归属）
-- 左侧 Column 不变
-- 括号包裹的条件正确处理
-- AND/OR 复合条件递归处理
-- CROSS JOIN（无 ON）不报错
-- 现有 50 个测试全部通过
-- 新增测试覆盖：ON、WHERE、HAVING 隐式关联、复合条件、括号、子查询别名、表达式多列
+
+- `SELECT * FROM users` 的 STAR 字段输出中 `star_table == "users"`。
+- `SELECT id, name FROM (SELECT id, name FROM users) t` 的外层字段 `source_table == "t"`。
+- `SELECT * FROM t1, t2 WHERE t1.id = t2.t1_id(+)` 从 `WHERE` 条件识别隐式关联，返回 `IMPLICIT_JOIN`，左表 `t1`，右表 `t2`。
+- `SELECT * FROM a JOIN b ON a.x=b.x JOIN c ON b.y=c.y` 返回两条 JOIN，第二条左表为 `b`，右表为 `c`。
+- `WITH cte AS (...) SELECT * FROM cte` 的 hierarchy 包含 `CTE_DEF` 节点，并保留主查询结构。
+- `parse_sql()` 的成功与失败输出均可通过预定义 JSON Schema 校验。
+- 新增/调整的测试能失败复现上述问题，并在修复后通过。
+- `uv run pytest --cov=sql_analysis --cov-report=term-missing` 通过，覆盖率不低于 80%。
