@@ -474,14 +474,16 @@ def _extract_hierarchy(
                     )
 
         # 添加 CTE 定义
-        cte_nodes = node.args.get("ctes")
+        with_expr = node.args.get("with_")
+        cte_nodes = with_expr.expressions if with_expr is not None else None
         if cte_nodes:
             for cte in cte_nodes:
                 inner = cte.this
                 if isinstance(inner, exp.Select):
+                    cte_name = cte.alias if isinstance(cte.alias, str) else str(cte.alias)
                     cte_child = HierarchyNode(
                         node_type="CTE_DEF",
-                        name=cte.alias if isinstance(cte.alias, str) else str(cte.alias),
+                        name=cte_name,
                         depth=0,
                         children=[_extract_hierarchy(inner, cte_defs, 1)],
                     )

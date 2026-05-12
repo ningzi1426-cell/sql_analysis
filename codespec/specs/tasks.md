@@ -81,7 +81,7 @@
     - `WHERE t1.id = t2.t1_id(+)` 识别为 `IMPLICIT_JOIN`，左表 `t1`，右表 `t2`
     - CROSS JOIN 不受影响
 
-- [ ] **TASK-018**: 修复 FR-004 CTE hierarchy
+- [x] **TASK-018**: 修复 FR-004 CTE hierarchy
   - Context: 修改 hierarchy 构建逻辑，使 CTE 定义以 `CTE_DEF` 节点出现在层次结构中，同时保留主查询节点。
   - Acceptance:
     - `WITH cte AS (...) SELECT * FROM cte` 的 hierarchy 包含 `CTE_DEF`

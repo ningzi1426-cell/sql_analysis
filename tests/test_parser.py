@@ -246,7 +246,13 @@ class TestHierarchyExtraction:
         )
         result = parse_sql(sql)
         hierarchy = result["hierarchy"]
-        assert hierarchy["node_type"] in ("SELECT",)
+        assert hierarchy["node_type"] == "SELECT"
+        cte_nodes = [
+            child for child in hierarchy["children"]
+            if child["node_type"] == "CTE_DEF"
+        ]
+        assert len(cte_nodes) == 1
+        assert cte_nodes[0]["name"] == "cte"
 
     def test_triple_nesting(self):
         """多层嵌套子查询 — depth=3。"""
