@@ -74,7 +74,7 @@
     - 派生表外层未限定字段记录 `source_table == "t"`
     - 多表或无法消歧时仍返回 `UNKNOWN`
 
-- [ ] **TASK-017**: 修复 FR-003 JOIN 关系识别
+- [x] **TASK-017**: 修复 FR-003 JOIN 关系识别
   - Context: 修改 `parser.py` 的 JOIN 提取逻辑，显式链式 JOIN 从 ON 条件推导实际左表；WHERE 隐式关联从 WHERE 比较表达式识别表间关系并返回 `IMPLICIT_JOIN`。
   - Acceptance:
     - `a JOIN b ... JOIN c ON b.y=c.y` 的第二条 JOIN 左表为 `b`，右表为 `c`

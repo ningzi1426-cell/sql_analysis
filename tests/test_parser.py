@@ -198,15 +198,23 @@ class TestJoinExtraction:
             "SELECT * FROM a JOIN b ON a.x = b.x JOIN c ON b.y = c.y"
         )
         joins = result["joins"]
-        assert len(joins) >= 2
+        assert len(joins) == 2
+        assert joins[0]["left_table"] == "a"
+        assert joins[0]["right_table"] == "b"
+        assert joins[1]["left_table"] == "b"
+        assert joins[1]["right_table"] == "c"
 
     def test_implicit_join_oracle_plus(self):
         """隐式连接 + Oracle (+) 语法。"""
         result = parse_sql(
             "SELECT * FROM t1, t2 WHERE t1.id = t2.t1_id(+)"
         )
-        # 至少能正常解析不报错
         assert result["error"] is None
+        joins = result["joins"]
+        assert len(joins) == 1
+        assert joins[0]["join_type"] == "IMPLICIT_JOIN"
+        assert joins[0]["left_table"] == "t1"
+        assert joins[0]["right_table"] == "t2"
 
 
 # ── FR-004: 层次结构识别 ──────────────────────────────────

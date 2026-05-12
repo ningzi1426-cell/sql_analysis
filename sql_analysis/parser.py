@@ -74,6 +74,77 @@ def _join_kind_to_enum(kind: str | None) -> JoinType:
     return mapping.get(kind_upper, JoinType.INNER_JOIN)
 
 
+def _source_info(node: exp.Expression | None) -> tuple[str, str | None]:
+    if isinstance(node, exp.Table):
+        return _table_name(node), _alias_of(node)
+    if isinstance(node, exp.Subquery):
+        return "", _alias_of(node)
+    return "", None
+
+
+def _table_lookup(select: exp.Select) -> dict[str, tuple[str, str | None]]:
+    lookup: dict[str, tuple[str, str | None]] = {}
+    from_expr = select.args.get("from_")
+    if from_expr is not None:
+        source = from_expr.this if isinstance(from_expr, exp.From) else from_expr
+        name, alias = _source_info(source)
+        if alias:
+            lookup[alias] = (name, alias)
+        if name:
+            lookup[name] = (name, alias)
+
+    for join_node in select.args.get("joins") or []:
+        name, alias = _source_info(join_node.this)
+        if alias:
+            lookup[alias] = (name, alias)
+        if name:
+            lookup[name] = (name, alias)
+
+    return lookup
+
+
+def _first_column_table(expr: exp.Expression | None) -> str | None:
+    if expr is None:
+        return None
+    if isinstance(expr, exp.Column):
+        return _col_table(expr)
+    column = next(expr.find_all(exp.Column), None)
+    return _col_table(column) if column is not None else None
+
+
+def _comparison_tables(expr: exp.Expression) -> tuple[str | None, str | None] | None:
+    if isinstance(expr, exp.Paren):
+        return _comparison_tables(expr.this)
+    if isinstance(expr, (exp.And, exp.Or)):
+        return _comparison_tables(expr.this) or _comparison_tables(expr.expression)
+    if isinstance(expr, (exp.EQ, exp.NEQ, exp.GT, exp.LT, exp.GTE, exp.LTE, exp.Is)):
+        left_table = _first_column_table(expr.this)
+        right_table = _first_column_table(expr.expression)
+        if left_table and right_table and left_table != right_table:
+            return left_table, right_table
+    return None
+
+
+def _where_join_tables(
+    select: exp.Select,
+    right_alias: str | None,
+) -> tuple[str | None, str | None] | None:
+    where = select.args.get("where")
+    if where is None:
+        return None
+
+    tables = _comparison_tables(where.this)
+    if tables is None:
+        return None
+
+    left_table, right_table = tables
+    if right_alias is None or right_alias == right_table:
+        return left_table, right_table
+    if right_alias == left_table:
+        return right_table, left_table
+    return None
+
+
 # ── FR-001: 表引用提取 ────────────────────────────────────
 
 
@@ -263,11 +334,13 @@ def _extract_columns_recursive(
 
 def _extract_joins(select: exp.Select) -> list[dict]:
     joins: list[dict] = []
+    lookup = _table_lookup(select)
 
     # 显式 JOIN
     for join_node in select.find_all(exp.Join):
         kind = join_node.args.get("kind")
         side = join_node.args.get("side")
+        on_expr = join_node.args.get("on")
         # sqlglot 对 LEFT/RIGHT/FULL JOIN 使用 side 属性，kind 为 None
         if side is not None:
             side_str = side if isinstance(side, str) else str(side)
@@ -275,38 +348,44 @@ def _extract_joins(select: exp.Select) -> list[dict]:
         elif kind is not None:
             kind_str = kind if isinstance(kind, str) else str(kind)
             join_type = _join_kind_to_enum(kind_str.upper())
+        elif on_expr is None:
+            join_type = JoinType.IMPLICIT_JOIN
         else:
             join_type = JoinType.INNER_JOIN
 
         # 提取右表信息
         right_expr = join_node.this
-        right_name = ""
-        right_alias = None
-        if isinstance(right_expr, exp.Table):
-            right_name = _table_name(right_expr)
-            right_alias = _alias_of(right_expr)
-        elif isinstance(right_expr, exp.Subquery):
-            right_alias = _alias_of(right_expr)
+        right_name, right_alias = _source_info(right_expr)
 
-        # 提取左表信息（从 FROM 获取）
-        from_expr = select.args.get("from_")
         left_name = ""
         left_alias = None
-        if from_expr is not None:
-            from_table = from_expr.this if isinstance(from_expr, exp.From) else from_expr
-            if isinstance(from_table, exp.Table):
-                left_name = _table_name(from_table)
-                left_alias = _alias_of(from_table)
-            elif isinstance(from_table, exp.Subquery):
-                left_alias = _alias_of(from_table)
 
-        # 提取 ON 条件
-        on_expr = join_node.args.get("on")
+        condition_tables = _comparison_tables(on_expr) if on_expr is not None else None
+        if condition_tables is None and join_type == JoinType.IMPLICIT_JOIN:
+            condition_tables = _where_join_tables(select, right_alias or right_name)
+
+        if condition_tables is not None:
+            left_key, right_key = condition_tables
+            if right_key == (right_alias or right_name):
+                left_name, left_alias = lookup.get(left_key or "", (left_key or "", left_key))
+            elif left_key == (right_alias or right_name):
+                left_name, left_alias = lookup.get(right_key or "", (right_key or "", right_key))
+
+        if not left_name:
+            from_expr = select.args.get("from_")
+            if from_expr is not None:
+                from_table = from_expr.this if isinstance(from_expr, exp.From) else from_expr
+                left_name, left_alias = _source_info(from_table)
+
         condition = None
         conditions: list[str] = []
         if on_expr is not None:
             condition = on_expr.sql(dialect="oracle")
             conditions = _split_conditions(on_expr)
+        elif join_type == JoinType.IMPLICIT_JOIN and select.args.get("where") is not None:
+            where_expr = select.args["where"].this
+            condition = where_expr.sql(dialect="oracle")
+            conditions = _split_conditions(where_expr)
 
         joins.append(
             JoinRef(
@@ -320,7 +399,7 @@ def _extract_joins(select: exp.Select) -> list[dict]:
             ).to_dict()
         )
 
-    # 隐式连接（逗号分隔的多表，无显式 JOIN）
+    # 兼容 sqlglot 未把逗号来源暴露为 Join 节点的情况。
     if not joins:
         from_expr = select.args.get("from_")
         if from_expr is not None:
