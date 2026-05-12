@@ -94,12 +94,12 @@ including their source table or alias qualification.
 #### Scenario: 跨子查询边界的字段
 - **GIVEN** 输入 SQL 为 `SELECT id, name FROM (SELECT id, name FROM users) t`
 - **WHEN** 调用解析器对该语句进行分析
-- **THEN** 外层 SELECT 的 `id`、`name` 来源标记为别名 `t`（派生表），不穿透到 `users`
+- **THEN** 外层 SELECT 的 `id`、`name` 来源标记为别名 `t`（派生表），不穿透到 `users`；内层 SELECT 的字段仍按自身作用域记录
 
 #### Scenario: 使用通配符 `*` 的查询
 - **GIVEN** 输入 SQL 为 `SELECT * FROM users`
 - **WHEN** 调用解析器对该语句进行分析
-- **THEN** `*` 被记录为特殊字段引用，类型为 STAR，源表为 `users`
+- **THEN** `*` 被记录为特殊字段引用，类型为 STAR，`star_table` 为 `users`
 
 ---
 
@@ -136,12 +136,14 @@ including join type, participating tables, and join conditions.
 #### Scenario: 嵌套 JOIN 的关联顺序
 - **GIVEN** 输入 SQL 为 `SELECT * FROM a JOIN b ON a.x=b.x JOIN c ON b.y=c.y`
 - **WHEN** 调用解析器对该语句进行分析
-- **THEN** 返回 2 条关联关系，顺序与 SQL 中 JOIN 出现的顺序一致
+- **THEN** 返回 2 条关联关系，顺序与 SQL 中 JOIN 出现的顺序一致：
+  - 第 1 条：左表 `a`，右表 `b`，条件 `a.x = b.x`
+  - 第 2 条：左表 `b`，右表 `c`，条件 `b.y = c.y`
 
-#### Scenario: 隐式连接（FROM 子句中逗号分隔的多表）
+#### Scenario: WHERE 条件中的隐式连接
 - **GIVEN** 输入 SQL 为 `SELECT * FROM t1, t2 WHERE t1.id = t2.t1_id(+)`
 - **WHEN** 调用解析器对该语句进行分析
-- **THEN** 返回 1 条关联关系：
+- **THEN** 从 WHERE 条件识别出 1 条隐式关联关系：
   - 类型 IMPLICIT_JOIN，左表 `t1`，右表 `t2`
   - 出现 `(+)` Oracle数据库关联标识时，表示左关联，其前面的字段是右表字段
 
@@ -165,7 +167,7 @@ structure formed by subqueries and CTEs, recording nesting relationships.
 #### Scenario: 含 CTE 的查询
 - **GIVEN** 输入 SQL 为 `WITH cte AS (SELECT id FROM users WHERE status=1) SELECT * FROM cte`
 - **WHEN** 调用解析器对该语句进行分析
-- **THEN** 返回的结构包含 1 个 CTE 定义节点 `cte`（内部为 SELECT），以及 1 个主查询节点引用该 CTE
+- **THEN** 返回的结构包含 1 个 CTE 定义节点 `cte`（内部为 SELECT），以及 1 个主查询节点引用该 CTE；CTE 定义节点类型为 `CTE_DEF`
 
 #### Scenario: 多层嵌套子查询
 - **GIVEN** 输入 SQL 为 `SELECT * FROM (SELECT id FROM (SELECT id FROM users) t1) t2`
@@ -220,9 +222,9 @@ in a machine-readable format containing all identified elements.
 - **THEN** 返回结构包含 `error` 字段，`tables`、`columns` 等字段为 `null`
 
 #### Scenario: 输出格式验证
-- **GIVEN** 任意合法输入 SQL
+- **GIVEN** 任意合法输入 SQL 或无法解析的 SQL
 - **WHEN** 解析器完成分析
-- **THEN** 输出结果可通过预定义的 JSON Schema 校验
+- **THEN** 输出结果可通过预定义的 JSON Schema 校验；成功输出包含非空 `tables`、`columns`、`joins`、`hierarchy` 和空 `error`，失败输出包含错误信息且数据字段为 `null`
 
 <!-- EARS patterns (pick one per requirement):
   Ubiquitous:    The system shall [action].
