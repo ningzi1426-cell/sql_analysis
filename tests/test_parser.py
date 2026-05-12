@@ -132,8 +132,9 @@ class TestColumnExtraction:
         sql = "SELECT id, name FROM (SELECT id, name FROM users) t"
         result = parse_sql(sql)
         columns = result["columns"]
-        # 内外层字段名称相同，但各自独立记录
-        assert len(columns) >= 2  # 至少 2 个字段引用（外层 + 内层）
+        outer_columns = columns[:2]
+        assert [col["name"] for col in outer_columns] == ["id", "name"]
+        assert {col["source_table"] for col in outer_columns} == {"t"}
 
     def test_star_wildcard(self):
         """通配符 * 查询。"""
@@ -141,7 +142,7 @@ class TestColumnExtraction:
         columns = result["columns"]
         star_cols = [c for c in columns if c["ref_type"] == "STAR"]
         assert len(star_cols) == 1
-        # sqlglot 对 SELECT * FROM users 的 Star 节点不关联源表
+        assert star_cols[0]["star_table"] == "users"
 
 
 # ── FR-003: 关联关系识别 ──────────────────────────────────

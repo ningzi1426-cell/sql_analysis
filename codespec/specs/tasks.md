@@ -67,7 +67,7 @@
 
 ## Spec 合规修复（FR-002/003/004/006）
 
-- [ ] **TASK-016**: 修复 FR-002 字段来源推断
+- [x] **TASK-016**: 修复 FR-002 字段来源推断
   - Context: 修改 `parser.py` 的字段提取逻辑，为当前 SELECT 构建 FROM 源上下文；支持 `SELECT * FROM users` 的 `star_table`，以及 `SELECT id FROM (...) t` 外层字段来源为 `t`。
   - Acceptance:
     - STAR 字段记录 `star_table == "users"`

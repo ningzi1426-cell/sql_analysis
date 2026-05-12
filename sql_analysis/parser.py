@@ -142,12 +142,33 @@ def _extract_tables_from_union(
 # ── FR-002: 字段引用提取 ──────────────────────────────────
 
 
+def _single_from_source(select: exp.Select) -> tuple[str, str] | None:
+    """返回当前 SELECT 唯一 FROM 源的类型和别名。"""
+    if select.args.get("joins"):
+        return None
+
+    from_expr = select.args.get("from_")
+    if from_expr is None:
+        return None
+
+    source = from_expr.this if isinstance(from_expr, exp.From) else from_expr
+    if isinstance(source, exp.Table):
+        return ("table", _alias_of(source) or _table_name(source))
+    if isinstance(source, exp.Subquery):
+        alias = _alias_of(source)
+        if alias:
+            return ("derived", alias)
+    return None
+
+
 def _extract_columns(select: exp.Select) -> list[dict]:
     """提取当前 SELECT 级别的字段引用，不穿透子查询边界。"""
     columns: list[dict] = []
     select_exprs = select.args.get("expressions")
     if not select_exprs:
         return columns
+
+    from_source = _single_from_source(select)
 
     for pos, expr in enumerate(select_exprs):
         # 解包 Alias 节点
@@ -164,6 +185,8 @@ def _extract_columns(select: exp.Select) -> list[dict]:
                     if isinstance(inner_table, str)
                     else str(inner_table)
                 )
+            elif from_source is not None and from_source[0] == "table":
+                star_table = from_source[1]
             columns.append(
                 ColumnRef(
                     name="*",
@@ -173,7 +196,10 @@ def _extract_columns(select: exp.Select) -> list[dict]:
                 ).to_dict()
             )
         elif isinstance(inner, exp.Column):
-            source = _col_table(inner) or "UNKNOWN"
+            source = _col_table(inner)
+            if source is None and from_source is not None and from_source[0] == "derived":
+                source = from_source[1]
+            source = source or "UNKNOWN"
             columns.append(
                 ColumnRef(
                     name=_col_name(inner),
