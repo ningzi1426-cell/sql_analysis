@@ -55,3 +55,16 @@
 - **新增 Scenario: ON 条件中字段引用同步更新** — GIVEN `SELECT u.id FROM users u JOIN orders u ON u.id = u.uid` / WHEN 调用别名规范化 / THEN `u.uid` → `u_2.uid`，`u.id`（左侧）不变
 - **新增 Scenario: WHERE 隐式关联中字段引用同步更新** — GIVEN `SELECT * FROM t1 u, t2 u WHERE u.a = u.b` / WHEN 调用别名规范化 / THEN `u.b` → `u_2.b`，`u.a` 不变
 - **新增 Scenario: 复合条件和括号正确处理** — GIVEN ON/WHERE 含 AND/OR/括号 / WHEN 调用别名规范化 / THEN 递归处理所有比较表达式
+
+## 2026-05-12 spec compliance fixes
+
+### 变更摘要
+澄清并补齐 FR-002、FR-003、FR-004、FR-006 的验收要求，使完整规格与已发现的行为偏差一一对应。重点是字段来源推断、WHERE 隐式关联识别、链式 JOIN 左右表关系、CTE 层次结构，以及结构化输出的 JSON Schema 校验。
+
+### 对 spec.md 的变更
+- **修改 FR-002 Scenario: 跨子查询边界的字段**：明确外层 `SELECT id, name FROM (SELECT id, name FROM users) t` 的外层字段来源应标记为派生表别名 `t`，不穿透到 `users`。
+- **修改 FR-002 Scenario: 使用通配符 `*` 的查询**：明确 `SELECT * FROM users` 的 STAR 字段应记录 `star_table = "users"`。
+- **修改 FR-003 Scenario: 隐式连接**：将描述重点从 FROM 逗号分隔改为 WHERE 条件中的隐式关联关系。GIVEN 仍可使用 `SELECT * FROM t1, t2 WHERE t1.id = t2.t1_id(+)`，THEN 要求从 WHERE 条件识别出 `IMPLICIT_JOIN`，左表 `t1`，右表 `t2`。
+- **修改 FR-003 Scenario: 嵌套 JOIN 的关联顺序**：明确链式 JOIN 的每条关系应使用该 JOIN 实际相邻的左右表；例如第二条 `JOIN c ON b.y=c.y` 的左表为 `b`，右表为 `c`。
+- **修改 FR-004 Scenario: 含 CTE 的查询**：明确 hierarchy 中必须包含 `CTE_DEF` 节点，且保留主查询节点。
+- **修改 FR-006 Scenario: 输出格式验证**：明确预定义 JSON Schema 位于项目测试/规范可引用的位置，并要求成功输出与错误输出均可通过该 schema 校验。

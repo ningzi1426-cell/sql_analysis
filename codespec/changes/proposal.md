@@ -1,3 +1,5 @@
+[PROCESSED: 2026-05-12]
+
 # Proposal: spec compliance fixes
 
 ## 需求描述

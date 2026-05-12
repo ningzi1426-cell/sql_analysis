@@ -83,3 +83,33 @@
     - 覆盖：ON 右侧更新、WHERE 隐式关联更新、HAVING 条件更新、复合条件、括号、子查询别名、表达式多列更新、CROSS JOIN 跳过、无冲突不变
     - 所有新测试通过
     - 覆盖率 >= 80%
+
+## 2026-05-12 spec compliance fixes
+
+### 变更摘要
+新增 4 项任务，修复现有 parser 与 spec 的偏差，并补齐精确测试。
+
+### 对 tasks.md 的变更
+- **TASK-016: 修复 FR-002 字段来源推断**
+  - Context: 修改 `parser.py` 的字段提取逻辑，为当前 SELECT 构建 FROM 源上下文；支持 `SELECT * FROM users` 的 `star_table`，以及 `SELECT id FROM (...) t` 外层字段来源为 `t`。
+  - Acceptance:
+    - STAR 字段记录 `star_table == "users"`。
+    - 派生表外层未限定字段记录 `source_table == "t"`。
+    - 多表或无法消歧时仍返回 `UNKNOWN`。
+- **TASK-017: 修复 FR-003 JOIN 关系识别**
+  - Context: 修改 `parser.py` 的 JOIN 提取逻辑，显式链式 JOIN 从 ON 条件推导实际左表；WHERE 隐式关联从 WHERE 比较表达式识别表间关系并返回 `IMPLICIT_JOIN`。
+  - Acceptance:
+    - `a JOIN b ... JOIN c ON b.y=c.y` 的第二条 JOIN 左表为 `b`，右表为 `c`。
+    - `WHERE t1.id = t2.t1_id(+)` 识别为 `IMPLICIT_JOIN`，左表 `t1`，右表 `t2`。
+    - CROSS JOIN 不受影响。
+- **TASK-018: 修复 FR-004 CTE hierarchy**
+  - Context: 修改 hierarchy 构建逻辑，使 CTE 定义以 `CTE_DEF` 节点出现在层次结构中，同时保留主查询节点。
+  - Acceptance:
+    - `WITH cte AS (...) SELECT * FROM cte` 的 hierarchy 包含 `CTE_DEF`。
+    - 原有无嵌套、子查询、UNION hierarchy 测试继续通过。
+- **TASK-019: 补齐 FR-006 JSON Schema 验证测试**
+  - Context: 在测试中定义 parse result JSON Schema，覆盖成功输出与错误输出。
+  - Acceptance:
+    - 成功输出通过 schema 校验。
+    - 解析失败输出通过 schema 校验。
+    - `uv run pytest --cov=sql_analysis --cov-report=term-missing` 通过，覆盖率不低于 80%。

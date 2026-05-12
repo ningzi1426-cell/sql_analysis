@@ -129,3 +129,26 @@
     - 覆盖：ON 右侧更新、复合条件、括号、子查询别名、CROSS JOIN、无冲突不变
     - 所有新测试通过
     - 覆盖率 >= 80%
+
+## 2026-05-12 spec compliance fixes
+
+### 变更摘要
+补充解析器合规修复设计，保持现有 dataclass 输出结构不变，只收紧 parser 提取逻辑与测试验证。
+
+### 对 design.md 的变更
+- **新增 Decision 12: SELECT 作用域内的字段来源推断**
+  - **Choice**: 对当前 SELECT 构建轻量 FROM 源上下文。单一基表时，`SELECT *` 的 `star_table` 使用该表别名；单一派生表时，外层未限定字段的 `source_table` 使用派生表别名；多源或无法消歧时仍返回 `UNKNOWN`。
+  - **Rationale**: 只实现 spec 明确要求的可判定场景，避免引入复杂血缘推断。
+  - **Implications**: 不穿透派生表内部字段来源，保持跨子查询边界。
+- **新增 Decision 13: JOIN 关系按实际 ON/WHERE 条件推导左右表**
+  - **Choice**: 显式链式 JOIN 中，右表来自当前 `exp.Join.this`；左表优先从当前 ON 条件左侧限定符推导，无法推导时退回到上一张已知表。WHERE 隐式关联从 WHERE 比较表达式中提取左右限定符，并生成 `IMPLICIT_JOIN`。
+  - **Rationale**: sqlglot AST 中链式 JOIN 不总能通过顶层 FROM 根表表达每条关系的左表，ON/WHERE 条件是更贴近 spec 的来源。
+  - **Implications**: CROSS JOIN 无 ON 条件时仍使用 FROM 顺序；WHERE 中非表间比较不生成隐式关联。
+- **新增 Decision 14: CTE hierarchy 节点挂载在查询层次根上**
+  - **Choice**: 在构建 hierarchy 时从 AST 收集 CTE 定义，将每个 CTE 表示为 `CTE_DEF` 节点，并作为根查询的子节点之一，同时保留主查询节点本身。
+  - **Rationale**: 满足 FR-004 对 CTE 定义节点与主查询引用的可见性要求。
+  - **Implications**: 不改变 tables 中 CTE 的 `nested_tables` 逻辑。
+- **新增 Decision 15: 预定义 JSON Schema 用于输出合同验证**
+  - **Choice**: 在测试中维护 parse result 的 JSON Schema，并覆盖成功输出和错误输出。生产 `parse_sql()` 仍返回 plain dict，不引入运行时 schema 校验依赖。
+  - **Rationale**: FR-006 要求输出可校验，而不是每次解析必须执行校验；测试级 schema 能证明输出合同稳定，同时避免新增运行时依赖。
+  - **Implications**: 若未来公开 schema 给外部调用方，可将测试 schema 提升为包内资源文件。
