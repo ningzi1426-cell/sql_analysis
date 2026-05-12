@@ -87,7 +87,7 @@
     - `WITH cte AS (...) SELECT * FROM cte` 的 hierarchy 包含 `CTE_DEF`
     - 原有无嵌套、子查询、UNION hierarchy 测试继续通过
 
-- [ ] **TASK-019**: 补齐 FR-006 JSON Schema 验证测试
+- [x] **TASK-019**: 补齐 FR-006 JSON Schema 验证测试
   - Context: 在测试中定义 parse result JSON Schema，覆盖成功输出与错误输出。
   - Acceptance:
     - 成功输出通过 schema 校验

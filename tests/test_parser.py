@@ -7,6 +7,47 @@ import pytest
 from sql_analysis import parse_sql
 from sql_analysis.models import JoinType
 
+PARSE_RESULT_SCHEMA = {
+    "type": "object",
+    "required": ["tables", "columns", "joins", "hierarchy", "error"],
+    "properties": {
+        "tables": {"type": ["array", "null"], "items": {"type": "object"}},
+        "columns": {"type": ["array", "null"], "items": {"type": "object"}},
+        "joins": {"type": ["array", "null"], "items": {"type": "object"}},
+        "hierarchy": {"type": ["object", "null"]},
+        "error": {"type": ["string", "null"]},
+    },
+}
+
+
+def _assert_json_schema(value, schema):
+    expected_type = schema.get("type")
+    if expected_type is not None:
+        expected_types = expected_type if isinstance(expected_type, list) else [expected_type]
+        assert any(_matches_json_type(value, item) for item in expected_types)
+
+    for key in schema.get("required", []):
+        assert key in value
+
+    if isinstance(value, dict):
+        for key, child_schema in schema.get("properties", {}).items():
+            if key in value:
+                _assert_json_schema(value[key], child_schema)
+
+    if isinstance(value, list) and "items" in schema:
+        for item in value:
+            _assert_json_schema(item, schema["items"])
+
+
+def _matches_json_type(value, expected_type):
+    type_map = {
+        "array": list,
+        "object": dict,
+        "string": str,
+        "null": type(None),
+    }
+    return isinstance(value, type_map[expected_type])
+
 
 # ── FR-001: 表引用提取 ────────────────────────────────────
 
@@ -292,6 +333,16 @@ class TestOutputAssembly:
         result = parse_sql("SELECT id FROM users")
         json.dumps(result)
 
+    def test_valid_sql_matches_json_schema(self):
+        """合法 SQL 输出可通过预定义 JSON Schema。"""
+        result = parse_sql("SELECT id FROM users")
+        _assert_json_schema(result, PARSE_RESULT_SCHEMA)
+        assert result["tables"] is not None
+        assert result["columns"] is not None
+        assert result["joins"] is not None
+        assert result["hierarchy"] is not None
+        assert result["error"] is None
+
     def test_invalid_sql_error_output(self):
         """解析失败 — error 非空，数据字段为 null。"""
         result = parse_sql("SELECT a FROM")
@@ -300,6 +351,12 @@ class TestOutputAssembly:
         assert result["columns"] is None
         assert result["joins"] is None
         assert result["hierarchy"] is None
+
+    def test_invalid_sql_matches_json_schema(self):
+        """解析失败输出可通过预定义 JSON Schema。"""
+        result = parse_sql("SELECT a FROM")
+        _assert_json_schema(result, PARSE_RESULT_SCHEMA)
+        assert result["error"] is not None
 
 
 # ── 真实 SQL 示例 ──────────────────────────────────────────
