@@ -68,3 +68,14 @@
 - **修改 FR-003 Scenario: 嵌套 JOIN 的关联顺序**：明确链式 JOIN 的每条关系应使用该 JOIN 实际相邻的左右表；例如第二条 `JOIN c ON b.y=c.y` 的左表为 `b`，右表为 `c`。
 - **修改 FR-004 Scenario: 含 CTE 的查询**：明确 hierarchy 中必须包含 `CTE_DEF` 节点，且保留主查询节点。
 - **修改 FR-006 Scenario: 输出格式验证**：明确预定义 JSON Schema 位于项目测试/规范可引用的位置，并要求成功输出与错误输出均可通过该 schema 校验。
+
+## 2026-05-13 implicit join splitting
+
+### 变更摘要
+澄清 FR-003 中 WHERE 隐式连接的拆分要求：当 WHERE 中包含多个 AND 条件时，解析器应只为表间比较条件生成 `IMPLICIT_JOIN`，并且每条 JOIN 对应一条表间比较条件。非表间过滤条件不生成 JOIN。
+
+### 对 spec.md 的变更
+- **修改 FR-003 Scenario: WHERE 条件中的隐式连接**：明确从 WHERE 条件而不是 FROM 逗号本身识别隐式关联。
+- **新增多条件隐式连接要求**：`WHERE a.id = b.a_id AND b.id = c.b_id AND a.status <> 'X'` 应生成 2 条 `IMPLICIT_JOIN`，过滤条件 `a.status <> 'X'` 不生成 JOIN。
+- **新增 230278.sql 代表场景**：对 `ht/lt/s2/gl` 的多表 WHERE 条件，应生成 `ht -> lt`、`lt -> s2`、`lt -> s2`、`ht -> gl` 四条表间隐式关系。
+- **细化输出要求**：每条隐式 JOIN 的 `condition` 为对应单条表间比较表达式，`conditions` 仅包含该表达式。

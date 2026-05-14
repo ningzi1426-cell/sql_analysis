@@ -1,3 +1,5 @@
+[PROCESSED: 2026-05-13]
+
 # Proposal: implicit join splitting
 
 ## 需求描述

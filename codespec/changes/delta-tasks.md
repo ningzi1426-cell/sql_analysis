@@ -113,3 +113,22 @@
     - 成功输出通过 schema 校验。
     - 解析失败输出通过 schema 校验。
     - `uv run pytest --cov=sql_analysis --cov-report=term-missing` 通过，覆盖率不低于 80%。
+
+## 2026-05-13 implicit join splitting
+
+### 变更摘要
+新增 2 项任务，先收紧隐式 JOIN 测试，再修复 parser 的 WHERE 条件拆分逻辑。
+
+### 对 tasks.md 的变更
+- **TASK-020: 补充多条件隐式 JOIN 测试**
+  - Context: 在 `tests/test_parser.py` 中新增/收紧 FR-003 测试，覆盖多表 WHERE 条件和 `examples/230278.sql` 代表场景。
+  - Acceptance:
+    - 多条件 WHERE 只为表间比较生成 `IMPLICIT_JOIN`。
+    - `230278.sql` 输出包含 `ht -> lt`、`lt -> s2`、`lt -> s2`、`ht -> gl`。
+    - 每条 JOIN 的 `condition`/`conditions` 不再是完整 WHERE。
+- **TASK-021: 修复 WHERE 隐式 JOIN 拆分实现**
+  - Context: 修改 `sql_analysis/parser.py` 的隐式 JOIN 提取逻辑，递归拆分 WHERE 中的 AND 条件，并为每条表间比较生成独立 `JoinRef`。
+  - Acceptance:
+    - TASK-020 新增测试通过。
+    - 现有显式 INNER/LEFT/CROSS JOIN 测试不回归。
+    - `uv run pytest --cov=sql_analysis --cov-report=term-missing` 通过，覆盖率不低于 80%。

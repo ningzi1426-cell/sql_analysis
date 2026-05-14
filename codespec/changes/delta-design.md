@@ -152,3 +152,15 @@
   - **Choice**: 在测试中维护 parse result 的 JSON Schema，并覆盖成功输出和错误输出。生产 `parse_sql()` 仍返回 plain dict，不引入运行时 schema 校验依赖。
   - **Rationale**: FR-006 要求输出可校验，而不是每次解析必须执行校验；测试级 schema 能证明输出合同稳定，同时避免新增运行时依赖。
   - **Implications**: 若未来公开 schema 给外部调用方，可将测试 schema 提升为包内资源文件。
+
+## 2026-05-13 implicit join splitting
+
+### 变更摘要
+补充隐式 JOIN 拆分设计，使 parser 能从 WHERE 条件中提取多条独立表间关系，而不是把完整 WHERE 条件复制到每个 FROM 来源组合上。
+
+### 对 design.md 的变更
+- **新增 Decision 16: WHERE 隐式 JOIN 按表间比较条件拆分**
+  - **Choice**: 对 WHERE 表达式递归拆分 `AND`，只处理左右两侧均可提取不同表限定符的比较表达式。每个满足条件的比较表达式生成一条 `IMPLICIT_JOIN`。
+  - **Rationale**: 隐式 JOIN 的真实关系来自 WHERE 中的表间比较，而不是 FROM 中表的排列。按条件拆分能表达多表、多条件 SQL 的实际关系。
+  - **Implications**: 单表过滤条件、常量比较、同表比较不生成 JOIN。`OR` 条件暂不拆分为确定 JOIN，避免误判。
+- **调整 `_extract_joins()` 隐式分支**：当 join 节点没有 ON 且 WHERE 中存在可识别表间比较时，优先使用 WHERE 拆分结果生成 JOIN；不再为每个无 ON join 复制完整 WHERE 条件。
