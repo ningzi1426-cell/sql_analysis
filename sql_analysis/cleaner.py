@@ -43,7 +43,7 @@ def clean_sql(sql: str) -> str:
         else:
             result_parts.append(token.text)
 
-    return " ".join(result_parts)
+    return " ".join(result_parts).replace("( + )", "(+)")
 
 
 def normalize_aliases(sql: str) -> str:

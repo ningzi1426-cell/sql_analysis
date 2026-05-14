@@ -13,7 +13,14 @@ PARSE_RESULT_SCHEMA = {
     "properties": {
         "tables": {"type": ["array", "null"], "items": {"type": "object"}},
         "columns": {"type": ["array", "null"], "items": {"type": "object"}},
-        "joins": {"type": ["array", "null"], "items": {"type": "object"}},
+        "joins": {
+            "type": ["array", "null"],
+            "items": {
+                "type": "object",
+                "required": ["is_implicit"],
+                "properties": {"is_implicit": {"type": "boolean"}},
+            },
+        },
         "hierarchy": {"type": ["object", "null"]},
         "error": {"type": ["string", "null"]},
     },
@@ -44,6 +51,7 @@ def _matches_json_type(value, expected_type):
         "array": list,
         "object": dict,
         "string": str,
+        "boolean": bool,
         "null": type(None),
     }
     return isinstance(value, type_map[expected_type])

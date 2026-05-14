@@ -69,7 +69,6 @@ def _join_kind_to_enum(kind: str | None) -> JoinType:
         "RIGHT": JoinType.RIGHT_JOIN,
         "FULL": JoinType.FULL_JOIN,
         "CROSS": JoinType.CROSS_JOIN,
-        "IMPLICIT": JoinType.IMPLICIT_JOIN,
     }
     return mapping.get(kind_upper, JoinType.INNER_JOIN)
 
@@ -112,6 +111,18 @@ def _first_column_table(expr: exp.Expression | None) -> str | None:
     return _col_table(column) if column is not None else None
 
 
+def _first_column(expr: exp.Expression | None) -> exp.Column | None:
+    if expr is None:
+        return None
+    if isinstance(expr, exp.Column):
+        return expr
+    return next(expr.find_all(exp.Column), None)
+
+
+def _column_join_mark(col: exp.Column | None) -> bool:
+    return bool(col and col.args.get("join_mark"))
+
+
 def _comparison_tables(expr: exp.Expression) -> tuple[str | None, str | None] | None:
     if isinstance(expr, exp.Paren):
         return _comparison_tables(expr.this)
@@ -125,24 +136,68 @@ def _comparison_tables(expr: exp.Expression) -> tuple[str | None, str | None] | 
     return None
 
 
-def _where_join_tables(
+def _split_and_expressions(expr: exp.Expression) -> list[exp.Expression]:
+    if isinstance(expr, exp.Paren):
+        return _split_and_expressions(expr.this)
+    if isinstance(expr, exp.And):
+        return _split_and_expressions(expr.this) + _split_and_expressions(expr.expression)
+    return [expr]
+
+
+def _implicit_condition_info(
+    expr: exp.Expression,
+) -> tuple[str, str, JoinType] | None:
+    if isinstance(expr, exp.Paren):
+        return _implicit_condition_info(expr.this)
+    if not isinstance(expr, (exp.EQ, exp.NEQ, exp.GT, exp.LT, exp.GTE, exp.LTE, exp.Is)):
+        return None
+
+    left_col = _first_column(expr.this)
+    right_col = _first_column(expr.expression)
+    left_table = _col_table(left_col) if left_col is not None else None
+    right_table = _col_table(right_col) if right_col is not None else None
+    if not left_table or not right_table or left_table == right_table:
+        return None
+
+    left_mark = _column_join_mark(left_col)
+    right_mark = _column_join_mark(right_col)
+    if left_mark and not right_mark:
+        return right_table, left_table, JoinType.LEFT_JOIN
+    return left_table, right_table, JoinType.LEFT_JOIN if right_mark else JoinType.INNER_JOIN
+
+
+def _implicit_joins_from_where(
     select: exp.Select,
-    right_alias: str | None,
-) -> tuple[str | None, str | None] | None:
+    lookup: dict[str, tuple[str, str | None]],
+) -> list[dict]:
     where = select.args.get("where")
     if where is None:
-        return None
+        return []
 
-    tables = _comparison_tables(where.this)
-    if tables is None:
-        return None
+    joins: list[dict] = []
+    for condition_expr in _split_and_expressions(where.this):
+        condition_info = _implicit_condition_info(condition_expr)
+        if condition_info is None:
+            continue
 
-    left_table, right_table = tables
-    if right_alias is None or right_alias == right_table:
-        return left_table, right_table
-    if right_alias == left_table:
-        return right_table, left_table
-    return None
+        left_key, right_key, join_type = condition_info
+        left_name, left_alias = lookup.get(left_key, (left_key, left_key))
+        right_name, right_alias = lookup.get(right_key, (right_key, right_key))
+        condition = _condition_sql(condition_expr)
+        joins.append(
+            JoinRef(
+                left_table=left_name,
+                left_alias=left_alias,
+                right_table=right_name,
+                right_alias=right_alias,
+                join_type=join_type,
+                condition=condition,
+                conditions=[condition],
+                is_implicit=True,
+            ).to_dict()
+        )
+
+    return joins
 
 
 # ── FR-001: 表引用提取 ────────────────────────────────────
@@ -341,6 +396,9 @@ def _extract_joins(select: exp.Select) -> list[dict]:
         kind = join_node.args.get("kind")
         side = join_node.args.get("side")
         on_expr = join_node.args.get("on")
+        if on_expr is None and kind is None and side is None:
+            continue
+
         # sqlglot 对 LEFT/RIGHT/FULL JOIN 使用 side 属性，kind 为 None
         if side is not None:
             side_str = side if isinstance(side, str) else str(side)
@@ -348,8 +406,6 @@ def _extract_joins(select: exp.Select) -> list[dict]:
         elif kind is not None:
             kind_str = kind if isinstance(kind, str) else str(kind)
             join_type = _join_kind_to_enum(kind_str.upper())
-        elif on_expr is None:
-            join_type = JoinType.IMPLICIT_JOIN
         else:
             join_type = JoinType.INNER_JOIN
 
@@ -361,9 +417,6 @@ def _extract_joins(select: exp.Select) -> list[dict]:
         left_alias = None
 
         condition_tables = _comparison_tables(on_expr) if on_expr is not None else None
-        if condition_tables is None and join_type == JoinType.IMPLICIT_JOIN:
-            condition_tables = _where_join_tables(select, right_alias or right_name)
-
         if condition_tables is not None:
             left_key, right_key = condition_tables
             if right_key == (right_alias or right_name):
@@ -382,10 +435,6 @@ def _extract_joins(select: exp.Select) -> list[dict]:
         if on_expr is not None:
             condition = on_expr.sql(dialect="oracle")
             conditions = _split_conditions(on_expr)
-        elif join_type == JoinType.IMPLICIT_JOIN and select.args.get("where") is not None:
-            where_expr = select.args["where"].this
-            condition = where_expr.sql(dialect="oracle")
-            conditions = _split_conditions(where_expr)
 
         joins.append(
             JoinRef(
@@ -396,10 +445,13 @@ def _extract_joins(select: exp.Select) -> list[dict]:
                 join_type=join_type,
                 condition=condition,
                 conditions=conditions,
+                is_implicit=False,
             ).to_dict()
         )
 
-    # 兼容 sqlglot 未把逗号来源暴露为 Join 节点的情况。
+    joins.extend(_implicit_joins_from_where(select, lookup))
+
+    # 兼容 sqlglot 未把逗号来源暴露为 Join 节点且 WHERE 无关联的情况。
     if not joins:
         from_expr = select.args.get("from_")
         if from_expr is not None:
@@ -425,7 +477,8 @@ def _extract_joins(select: exp.Select) -> list[dict]:
                                 left_alias=_alias_of(left),
                                 right_table=_table_name(right),
                                 right_alias=_alias_of(right),
-                                join_type=JoinType.IMPLICIT_JOIN,
+                                join_type=JoinType.INNER_JOIN,
+                                is_implicit=True,
                             ).to_dict()
                         )
 
@@ -440,7 +493,12 @@ def _split_conditions(on_expr: exp.Expression) -> list[str]:
         left_conds = _split_conditions(on_expr.this)
         right_conds = _split_conditions(on_expr.expression)
         return left_conds + right_conds
-    return [on_expr.sql(dialect="oracle")]
+    return [_condition_sql(on_expr)]
+
+
+def _condition_sql(expr: exp.Expression) -> str:
+    """输出用于 JoinRef 的条件文本，去除 Oracle (+) 方向标记。"""
+    return expr.sql(dialect="oracle").replace(" (+)", "")
 
 
 # ── FR-004: 层次结构识别 ──────────────────────────────────

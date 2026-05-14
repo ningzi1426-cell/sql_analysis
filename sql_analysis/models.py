@@ -23,7 +23,6 @@ class JoinType(Enum):
     RIGHT_JOIN = "RIGHT_JOIN"
     FULL_JOIN = "FULL_JOIN"
     CROSS_JOIN = "CROSS_JOIN"
-    IMPLICIT_JOIN = "IMPLICIT_JOIN"
 
 
 class ColumnRefType(Enum):
@@ -84,6 +83,7 @@ class JoinRef:
     join_type: JoinType = JoinType.INNER_JOIN
     condition: str | None = None
     conditions: list[str] = field(default_factory=list)
+    is_implicit: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -94,6 +94,7 @@ class JoinRef:
             "join_type": self.join_type.value,
             "condition": self.condition,
             "conditions": self.conditions,
+            "is_implicit": self.is_implicit,
         }
 
 

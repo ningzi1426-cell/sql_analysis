@@ -105,7 +105,7 @@
     - `230278.sql` 输出包含 `ht -> lt`、`lt -> s2`、`lt -> s2`、`ht -> gl`。
     - 每条 JOIN 的 `condition` / `conditions` 不再是完整 WHERE。
 
-- [ ] **TASK-021**: 修复 WHERE 隐式 JOIN 拆分实现
+- [x] **TASK-021**: 修复 WHERE 隐式 JOIN 拆分实现
   - Context: 修改 `models.py` 的 `JoinRef` 输出结构和 `parser.py` 的隐式 JOIN 提取逻辑。递归拆分 WHERE 中的 AND 条件，并为每条表间比较生成独立 `JoinRef`。
   - Acceptance:
     - TASK-020 新增测试通过。
