@@ -96,7 +96,7 @@
 
 ## 隐式 JOIN 拆分修复（FR-003）
 
-- [ ] **TASK-020**: 补充多条件隐式 JOIN 测试
+- [x] **TASK-020**: 补充多条件隐式 JOIN 测试
   - Context: 在 `tests/test_parser.py` 中新增/收紧 FR-003 测试，覆盖多表 WHERE 条件、Oracle `(+)` 条件和 `examples/230278.sql` 代表场景。
   - Acceptance:
     - 多条件 WHERE 只为表间比较生成隐式 JOIN。

@@ -201,6 +201,7 @@ class TestJoinExtraction:
         assert j["join_type"] == "INNER_JOIN"
         assert j["left_table"] == "orders"
         assert j["right_table"] == "customers"
+        assert j["is_implicit"] is False
         assert j["condition"] is not None
 
     def test_left_join_compound_conditions(self):
@@ -213,6 +214,7 @@ class TestJoinExtraction:
         assert len(joins) >= 1
         j = joins[0]
         assert j["join_type"] == "LEFT_JOIN"
+        assert j["is_implicit"] is False
         assert len(j["conditions"]) >= 2
 
     def test_on_with_parentheses(self):
@@ -232,6 +234,7 @@ class TestJoinExtraction:
         assert len(joins) >= 1
         j = joins[0]
         assert j["join_type"] == "CROSS_JOIN"
+        assert j["is_implicit"] is False
 
     def test_nested_joins_order(self):
         """嵌套 JOIN 按出现顺序返回。"""
@@ -253,9 +256,55 @@ class TestJoinExtraction:
         assert result["error"] is None
         joins = result["joins"]
         assert len(joins) == 1
-        assert joins[0]["join_type"] == "IMPLICIT_JOIN"
+        assert joins[0]["join_type"] == "LEFT_JOIN"
+        assert joins[0]["is_implicit"] is True
         assert joins[0]["left_table"] == "t1"
         assert joins[0]["right_table"] == "t2"
+        assert joins[0]["condition"] == "t1.id = t2.t1_id"
+        assert joins[0]["conditions"] == ["t1.id = t2.t1_id"]
+
+    def test_implicit_join_multiple_conditions_split(self):
+        """WHERE 多条件隐式 JOIN 拆分为独立表间关系。"""
+        result = parse_sql(
+            "SELECT * FROM a, b, c "
+            "WHERE a.id = b.a_id AND b.id = c.b_id AND a.status <> 'X'"
+        )
+        assert result["error"] is None
+        joins = result["joins"]
+        assert len(joins) == 2
+        assert [
+            (j["left_alias"], j["right_alias"], j["join_type"], j["is_implicit"])
+            for j in joins
+        ] == [
+            ("a", "b", "INNER_JOIN", True),
+            ("b", "c", "INNER_JOIN", True),
+        ]
+        assert [j["condition"] for j in joins] == [
+            "a.id = b.a_id",
+            "b.id = c.b_id",
+        ]
+        assert all(j["conditions"] == [j["condition"]] for j in joins)
+
+    def test_implicit_join_230278_sql_split(self):
+        """230278.sql 的 WHERE 表间条件拆分为多条隐式 JOIN。"""
+        from pathlib import Path
+
+        sql = Path("examples/230278.sql").read_text(encoding="utf-8")
+        result = parse_sql(sql)
+        assert result["error"] is None
+        joins = result["joins"]
+        actual = [
+            (j["left_alias"], j["right_alias"], j["join_type"], j["condition"])
+            for j in joins
+            if j["is_implicit"]
+        ]
+        expected = [
+            ("ht", "lt", "INNER_JOIN", "ht.ae_header_id = lt.ae_header_id"),
+            ("lt", "s2", "INNER_JOIN", "lt.ae_header_id = s2.ae_header_id"),
+            ("lt", "s2", "INNER_JOIN", "lt.ae_line_num = s2.ae_line_num"),
+            ("ht", "gl", "INNER_JOIN", "ht.ledger_short_name = gl.ledger_short_name"),
+        ]
+        assert actual == expected
 
 
 # ── FR-004: 层次结构识别 ──────────────────────────────────
