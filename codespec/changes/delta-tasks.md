@@ -136,3 +136,7 @@
 ### 2026-05-13 补充：Oracle (+) 测试任务要求
 - **TASK-020 验收补充**：测试必须包含带 Oracle `(+)` 的 WHERE 隐式 JOIN 条件，覆盖单条件和多条件混合场景。
 - **TASK-021 验收补充**：实现必须在带 `(+)` 的 Column 上仍能正确提取左右表并生成独立 `IMPLICIT_JOIN`。
+
+### 2026-05-13 修正：JoinRef 输出字段任务要求
+- **TASK-020 验收修正**：隐式 JOIN 测试不再期望 `join_type == "IMPLICIT_JOIN"`，而应断言 `is_implicit == True`，普通 WHERE 表间条件对应 `join_type == "INNER_JOIN"`，带 `(+)` 的条件对应 `join_type == "LEFT_JOIN"`。
+- **TASK-021 实现修正**：更新 `JoinRef` 数据模型与 parser 输出，新增 `is_implicit` 字段，并停止输出 `IMPLICIT_JOIN` 类型。

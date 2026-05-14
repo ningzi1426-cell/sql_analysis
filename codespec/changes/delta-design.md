@@ -168,3 +168,8 @@
 ### 2026-05-13 补充：Oracle (+) 隐式外连接处理
 - **设计补充**：隐式 JOIN 拆分逻辑应把带 `join_mark=True` 的 Column 视为普通表限定符参与左右表识别，不因 sqlglot 序列化时省略 `(+)` 而丢失 JOIN 关系。
 - **边界**：本次只保留 `IMPLICIT_JOIN` 类型，不新增 LEFT/RIGHT 隐式外连接枚举映射；`(+)` 的方向语义可作为后续增强。
+
+### 2026-05-13 修正：隐式来源与连接类型解耦
+- **设计修正**：从 `JoinType` 中移除/停用 `IMPLICIT_JOIN` 输出语义。`JoinRef` 新增布尔字段 `is_implicit`，显式 JOIN 为 `false`，WHERE 隐式 JOIN 为 `true`。
+- **Oracle (+) 映射策略**：解析比较表达式时检查左右 Column 的 `join_mark`。若某侧 Column 带 `join_mark=True`，该侧表作为输出右表，另一侧作为左表，`join_type` 设为 `LEFT_JOIN`。若两侧都没有 `join_mark`，按表达式左右表输出，`join_type` 设为 `INNER_JOIN`。
+- **兼容性影响**：`joins[].join_type == "IMPLICIT_JOIN"` 的旧断言需要更新为 `joins[].is_implicit is True`，并检查 `join_type` 为实际连接语义。

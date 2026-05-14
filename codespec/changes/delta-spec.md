@@ -83,3 +83,9 @@
 ### 2026-05-13 补充：Oracle (+) 隐式外连接场景
 - **补充 FR-003 验收要求**：WHERE 隐式 JOIN 拆分必须覆盖 Oracle `(+)` 标记。例如 `WHERE t1.id = t2.t1_id(+)` 仍应生成 `t1 -> t2` 的 `IMPLICIT_JOIN`，且该条件应作为单条 join condition 保留。
 - **多条件场景要求**：当 WHERE 同时包含普通表间条件、带 `(+)` 的表间条件和非表间过滤条件时，parser 应分别生成对应的表间 `IMPLICIT_JOIN`，过滤条件不生成 JOIN。
+
+### 2026-05-13 修正：join_type 不再输出 IMPLICIT_JOIN
+- **修正 FR-003 输出要求**：`join_type` 只表达连接语义，可取 `INNER_JOIN`、`LEFT_JOIN`、`RIGHT_JOIN`、`FULL_JOIN`、`CROSS_JOIN`；不再使用 `IMPLICIT_JOIN` 作为输出结果。
+- **新增隐式来源字段**：JOIN 结果新增 `is_implicit` 字段，用于标识该关系是否来自 WHERE 条件中的隐式 JOIN。
+- **WHERE 隐式普通内关联**：当 WHERE 表间比较条件没有 Oracle `(+)` 标记时，生成 `join_type = INNER_JOIN` 且 `is_implicit = true`。
+- **Oracle (+) 规则**：当比较条件中某个字段带 `(+)` 时，该字段所属表作为右表输出，另一侧作为左表输出，生成 `join_type = LEFT_JOIN` 且 `is_implicit = true`。例如 `t1.id = t2.t1_id(+)` 输出左表 `t1`、右表 `t2`、`join_type = LEFT_JOIN`。
