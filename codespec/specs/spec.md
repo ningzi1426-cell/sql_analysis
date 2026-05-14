@@ -144,8 +144,28 @@ including join type, participating tables, and join conditions.
 - **GIVEN** 输入 SQL 为 `SELECT * FROM t1, t2 WHERE t1.id = t2.t1_id(+)`
 - **WHEN** 调用解析器对该语句进行分析
 - **THEN** 从 WHERE 条件识别出 1 条隐式关联关系：
-  - 类型 IMPLICIT_JOIN，左表 `t1`，右表 `t2`
-  - 出现 `(+)` Oracle数据库关联标识时，表示左关联，其前面的字段是右表字段
+  - `is_implicit` 为 `true`
+  - `join_type` 为 LEFT_JOIN，左表 `t1`，右表 `t2`
+  - 出现 `(+)` Oracle 数据库关联标识时，带 `(+)` 的字段所属表作为右表，另一侧作为左表
+  - 连接条件为 `t1.id = t2.t1_id`
+
+#### Scenario: WHERE 多条件隐式连接拆分
+- **GIVEN** 输入 SQL 的 WHERE 子句包含 `a.id = b.a_id AND b.id = c.b_id AND a.status <> 'X'`
+- **WHEN** 调用解析器对该语句进行分析
+- **THEN** 只为表间比较生成 2 条隐式关联关系：
+  - `a` -> `b`，`join_type` 为 INNER_JOIN，`is_implicit` 为 `true`
+  - `b` -> `c`，`join_type` 为 INNER_JOIN，`is_implicit` 为 `true`
+  - 过滤条件 `a.status <> 'X'` 不生成 JOIN
+  - 每条隐式 JOIN 的 `condition` 为对应单条表间比较表达式，`conditions` 仅包含该表达式
+
+#### Scenario: 真实 SQL 中的多表 WHERE 隐式连接
+- **GIVEN** 输入 SQL 来自 `examples/230278.sql`，WHERE 中包含 `ht`、`lt`、`s2`、`gl` 之间的多条表间条件
+- **WHEN** 调用解析器对该语句进行分析
+- **THEN** 返回的隐式 JOIN 至少包含：
+  - `ht` -> `lt`，条件 `ht.ae_header_id = lt.ae_header_id`
+  - `lt` -> `s2`，条件 `lt.ae_header_id = s2.ae_header_id`
+  - `lt` -> `s2`，条件 `lt.ae_line_num = s2.ae_line_num`
+  - `ht` -> `gl`，条件 `ht.ledger_short_name = gl.ledger_short_name`
 
 ---
 

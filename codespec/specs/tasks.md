@@ -75,10 +75,10 @@
     - 多表或无法消歧时仍返回 `UNKNOWN`
 
 - [x] **TASK-017**: 修复 FR-003 JOIN 关系识别
-  - Context: 修改 `parser.py` 的 JOIN 提取逻辑，显式链式 JOIN 从 ON 条件推导实际左表；WHERE 隐式关联从 WHERE 比较表达式识别表间关系并返回 `IMPLICIT_JOIN`。
+  - Context: 修改 `parser.py` 的 JOIN 提取逻辑，显式链式 JOIN 从 ON 条件推导实际左表；WHERE 隐式关联从 WHERE 比较表达式识别表间关系。
   - Acceptance:
     - `a JOIN b ... JOIN c ON b.y=c.y` 的第二条 JOIN 左表为 `b`，右表为 `c`
-    - `WHERE t1.id = t2.t1_id(+)` 识别为 `IMPLICIT_JOIN`，左表 `t1`，右表 `t2`
+    - `WHERE t1.id = t2.t1_id(+)` 识别为隐式 LEFT_JOIN，左表 `t1`，右表 `t2`，`is_implicit is True`
     - CROSS JOIN 不受影响
 
 - [x] **TASK-018**: 修复 FR-004 CTE hierarchy
@@ -93,3 +93,22 @@
     - 成功输出通过 schema 校验
     - 解析失败输出通过 schema 校验
     - `uv run pytest --cov=sql_analysis --cov-report=term-missing` 通过，覆盖率不低于 80%
+
+## 隐式 JOIN 拆分修复（FR-003）
+
+- [ ] **TASK-020**: 补充多条件隐式 JOIN 测试
+  - Context: 在 `tests/test_parser.py` 中新增/收紧 FR-003 测试，覆盖多表 WHERE 条件、Oracle `(+)` 条件和 `examples/230278.sql` 代表场景。
+  - Acceptance:
+    - 多条件 WHERE 只为表间比较生成隐式 JOIN。
+    - 普通 WHERE 表间条件输出 `join_type == "INNER_JOIN"` 且 `is_implicit is True`。
+    - 带 `(+)` 的条件输出 `join_type == "LEFT_JOIN"` 且 `is_implicit is True`。
+    - `230278.sql` 输出包含 `ht -> lt`、`lt -> s2`、`lt -> s2`、`ht -> gl`。
+    - 每条 JOIN 的 `condition` / `conditions` 不再是完整 WHERE。
+
+- [ ] **TASK-021**: 修复 WHERE 隐式 JOIN 拆分实现
+  - Context: 修改 `models.py` 的 `JoinRef` 输出结构和 `parser.py` 的隐式 JOIN 提取逻辑。递归拆分 WHERE 中的 AND 条件，并为每条表间比较生成独立 `JoinRef`。
+  - Acceptance:
+    - TASK-020 新增测试通过。
+    - `join_type` 不再输出 `IMPLICIT_JOIN`。
+    - 显式 INNER/LEFT/CROSS JOIN 输出 `is_implicit is False`。
+    - `uv run pytest --cov=sql_analysis --cov-report=term-missing` 通过，覆盖率不低于 80%。

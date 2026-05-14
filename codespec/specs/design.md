@@ -60,12 +60,12 @@ tests/
 
 ```
 TableType: BASE_TABLE | DERIVED_TABLE | CTE | VIRTUAL_TABLE
-JoinType:  INNER_JOIN | LEFT_JOIN | RIGHT_JOIN | FULL_JOIN | CROSS_JOIN | IMPLICIT_JOIN
+JoinType:  INNER_JOIN | LEFT_JOIN | RIGHT_JOIN | FULL_JOIN | CROSS_JOIN
 ColumnRefType: COLUMN | STAR
 
 TableRef:      name, schema?, alias?, table_type, nested_tables[]
 ColumnRef:     name, source_table?, position, ref_type, star_table?
-JoinRef:       left_table, left_alias?, right_table, right_alias?, join_type, condition?, conditions[]
+JoinRef:       left_table, left_alias?, right_table, right_alias?, join_type, condition?, conditions[], is_implicit
 HierarchyNode: node_type, name?, depth, children[]
 
 ParseResult: tables[], columns[], joins[], hierarchy{}, error?
@@ -123,9 +123,14 @@ parse_sql(sql) → clean_sql(sql) → normalize_aliases(cleaned) → parse_one(n
 **Implications**: 不穿透派生表内部字段来源，保持跨子查询边界。
 
 ### Decision 13: JOIN 关系按实际 ON/WHERE 条件推导左右表
-**Choice**: 显式链式 JOIN 中，右表来自当前 `exp.Join.this`；左表优先从当前 ON 条件左侧限定符推导，无法推导时退回到上一张已知表。WHERE 隐式关联从 WHERE 比较表达式中提取左右限定符，并生成 `IMPLICIT_JOIN`。
+**Choice**: 显式链式 JOIN 中，右表来自当前 `exp.Join.this`；左表优先从当前 ON 条件左侧限定符推导，无法推导时退回到上一张已知表。WHERE 隐式关联从 WHERE 比较表达式中提取左右限定符，并生成 `is_implicit = true` 的 JOIN；`join_type` 仍表达 INNER_JOIN、LEFT_JOIN 等连接语义。
 **Rationale**: sqlglot AST 中链式 JOIN 不总能通过顶层 FROM 根表表达每条关系的左表，ON/WHERE 条件是更贴近 spec 的来源。
 **Implications**: CROSS JOIN 无 ON 条件时仍使用 FROM 顺序；WHERE 中非表间比较不生成隐式关联。
+
+### Decision 16: WHERE 隐式 JOIN 按表间比较条件拆分
+**Choice**: 对 WHERE 表达式递归拆分 `AND`，只处理左右两侧均可提取不同表限定符的比较表达式。每个满足条件的比较表达式生成一条 `is_implicit = true` 的 JOIN。无 `(+)` 标记时 `join_type` 为 INNER_JOIN；某侧 Column 带 `join_mark=True` 时，该侧表作为输出右表，另一侧作为左表，`join_type` 为 LEFT_JOIN。
+**Rationale**: 隐式 JOIN 的真实关系来自 WHERE 中的表间比较，而不是 FROM 中表的排列。按条件拆分能表达多表、多条件 SQL 的实际关系，同时将连接语义与“是否隐式”解耦。
+**Implications**: 单表过滤条件、常量比较、同表比较不生成 JOIN。`OR` 条件暂不拆分为确定 JOIN，避免误判。旧的 `joins[].join_type == "IMPLICIT_JOIN"` 断言应更新为检查 `joins[].is_implicit is True`。
 
 ### Decision 14: CTE hierarchy 节点挂载在查询层次根上
 **Choice**: 在构建 hierarchy 时从 AST 收集 CTE 定义，将每个 CTE 表示为 `CTE_DEF` 节点，并作为根查询的子节点之一，同时保留主查询节点本身。
