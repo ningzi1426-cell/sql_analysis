@@ -132,3 +132,7 @@
     - TASK-020 新增测试通过。
     - 现有显式 INNER/LEFT/CROSS JOIN 测试不回归。
     - `uv run pytest --cov=sql_analysis --cov-report=term-missing` 通过，覆盖率不低于 80%。
+
+### 2026-05-13 补充：Oracle (+) 测试任务要求
+- **TASK-020 验收补充**：测试必须包含带 Oracle `(+)` 的 WHERE 隐式 JOIN 条件，覆盖单条件和多条件混合场景。
+- **TASK-021 验收补充**：实现必须在带 `(+)` 的 Column 上仍能正确提取左右表并生成独立 `IMPLICIT_JOIN`。

@@ -164,3 +164,7 @@
   - **Rationale**: 隐式 JOIN 的真实关系来自 WHERE 中的表间比较，而不是 FROM 中表的排列。按条件拆分能表达多表、多条件 SQL 的实际关系。
   - **Implications**: 单表过滤条件、常量比较、同表比较不生成 JOIN。`OR` 条件暂不拆分为确定 JOIN，避免误判。
 - **调整 `_extract_joins()` 隐式分支**：当 join 节点没有 ON 且 WHERE 中存在可识别表间比较时，优先使用 WHERE 拆分结果生成 JOIN；不再为每个无 ON join 复制完整 WHERE 条件。
+
+### 2026-05-13 补充：Oracle (+) 隐式外连接处理
+- **设计补充**：隐式 JOIN 拆分逻辑应把带 `join_mark=True` 的 Column 视为普通表限定符参与左右表识别，不因 sqlglot 序列化时省略 `(+)` 而丢失 JOIN 关系。
+- **边界**：本次只保留 `IMPLICIT_JOIN` 类型，不新增 LEFT/RIGHT 隐式外连接枚举映射；`(+)` 的方向语义可作为后续增强。

@@ -79,3 +79,7 @@
 - **新增多条件隐式连接要求**：`WHERE a.id = b.a_id AND b.id = c.b_id AND a.status <> 'X'` 应生成 2 条 `IMPLICIT_JOIN`，过滤条件 `a.status <> 'X'` 不生成 JOIN。
 - **新增 230278.sql 代表场景**：对 `ht/lt/s2/gl` 的多表 WHERE 条件，应生成 `ht -> lt`、`lt -> s2`、`lt -> s2`、`ht -> gl` 四条表间隐式关系。
 - **细化输出要求**：每条隐式 JOIN 的 `condition` 为对应单条表间比较表达式，`conditions` 仅包含该表达式。
+
+### 2026-05-13 补充：Oracle (+) 隐式外连接场景
+- **补充 FR-003 验收要求**：WHERE 隐式 JOIN 拆分必须覆盖 Oracle `(+)` 标记。例如 `WHERE t1.id = t2.t1_id(+)` 仍应生成 `t1 -> t2` 的 `IMPLICIT_JOIN`，且该条件应作为单条 join condition 保留。
+- **多条件场景要求**：当 WHERE 同时包含普通表间条件、带 `(+)` 的表间条件和非表间过滤条件时，parser 应分别生成对应的表间 `IMPLICIT_JOIN`，过滤条件不生成 JOIN。
