@@ -89,3 +89,22 @@
 - **新增隐式来源字段**：JOIN 结果新增 `is_implicit` 字段，用于标识该关系是否来自 WHERE 条件中的隐式 JOIN。
 - **WHERE 隐式普通内关联**：当 WHERE 表间比较条件没有 Oracle `(+)` 标记时，生成 `join_type = INNER_JOIN` 且 `is_implicit = true`。
 - **Oracle (+) 规则**：当比较条件中某个字段带 `(+)` 时，该字段所属表作为右表输出，另一侧作为左表输出，生成 `join_type = LEFT_JOIN` 且 `is_implicit = true`。例如 `t1.id = t2.t1_id(+)` 输出左表 `t1`、右表 `t2`、`join_type = LEFT_JOIN`。
+
+## 2026-05-15 cte union table expansion
+
+### 变更摘要
+修复 CTE 定义体为 `UNION` / `UNION ALL` 时，FR-001 表引用和
+FR-004 层次结构展开不完整的问题。解析器应把 `SELECT` 和 `UNION`
+形式的 CTE 定义都纳入 CTE 定义表，并能展开其分支中的表引用。
+
+### 对 spec.md 的变更
+- **修改 FR-001 Scenario: 包含 CTE 的查询**：补充要求 CTE 定义体可以是 `SELECT` 或 `UNION`。When SQL 包含 `WITH final AS (SELECT ... FROM rev_data UNION ALL SELECT ... FROM rev_data) SELECT * FROM final`, the system shall identify `final` as a CTE reference and populate `nested_tables` from both UNION branches.
+- **新增 FR-001 Scenario: UNION CTE 的表引用展开**：
+  - **GIVEN** 输入 SQL 包含 `final AS (SELECT id FROM rev_data UNION ALL SELECT id FROM rev_data)`，主查询 `SELECT * FROM final f`
+  - **WHEN** 调用解析器对该语句进行分析
+  - **THEN** `final` 返回为 `CTE` 类型而不是 `BASE_TABLE`，且 `nested_tables` 包含 UNION 分支中的 `rev_data` 引用
+- **修改 FR-004 Scenario: 含 CTE 的查询**：补充 CTE 定义体为 `UNION` 时也必须生成 `CTE_DEF` 节点。
+- **新增 FR-004 Scenario: UNION CTE 的层次结构**：
+  - **GIVEN** 输入 SQL 包含 `final AS (SELECT id FROM rev_data UNION ALL SELECT id FROM rev_data)`
+  - **WHEN** 调用解析器对该语句进行分析
+  - **THEN** hierarchy 中包含名为 `final` 的 `CTE_DEF` 节点，其子树包含 `UNION` 节点，并将两个 SELECT 分支作为子节点

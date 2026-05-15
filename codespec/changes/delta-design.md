@@ -173,3 +173,16 @@
 - **设计修正**：从 `JoinType` 中移除/停用 `IMPLICIT_JOIN` 输出语义。`JoinRef` 新增布尔字段 `is_implicit`，显式 JOIN 为 `false`，WHERE 隐式 JOIN 为 `true`。
 - **Oracle (+) 映射策略**：解析比较表达式时检查左右 Column 的 `join_mark`。若某侧 Column 带 `join_mark=True`，该侧表作为输出右表，另一侧作为左表，`join_type` 设为 `LEFT_JOIN`。若两侧都没有 `join_mark`，按表达式左右表输出，`join_type` 设为 `INNER_JOIN`。
 - **兼容性影响**：`joins[].join_type == "IMPLICIT_JOIN"` 的旧断言需要更新为 `joins[].is_implicit is True`，并检查 `join_type` 为实际连接语义。
+
+## 2026-05-15 cte union table expansion
+
+### 变更摘要
+补充 CTE 定义收集、表引用展开和层次结构构建的统一分发策略，使
+`Select` 与 `Union` CTE 体走同一套递归处理入口。
+
+### 对 design.md 的变更
+- **新增 Decision 17: CTE 定义体支持 Select 和 Union**
+  - **Choice**: `_collect_cte_defs()` 将 CTE 定义体类型从仅 `exp.Select` 扩展为 `exp.Select | exp.Union`。所有使用 `cte_defs` 的地方通过统一辅助函数按节点类型分发到 `_extract_tables_from_select()` 或 `_extract_tables_from_union()`。
+  - **Rationale**: sqlglot 会把 `WITH cte AS (SELECT ... UNION ALL SELECT ...)` 的 CTE 体表示为 `exp.Union`。只收集 `Select` 会导致 CTE 引用被误判为基表，且 `nested_tables` 和 hierarchy 缺失。
+  - **Implications**: 表引用提取、CTE `nested_tables` 填充、hierarchy 的 `CTE_DEF` 子树都需要接受 `Select | Union`。本次不改变字段血缘、UNION 去重或别名语义校验。
+- **调整 hierarchy CTE 节点构建**：当 CTE 体为 `Union` 时，`CTE_DEF.children` 应包含 `_extract_hierarchy(union, ...)` 的结果，让 UNION 的左右 SELECT 分支保留在层次结构中。

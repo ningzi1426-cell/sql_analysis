@@ -1,3 +1,5 @@
+# [PROCESSED: 2026-05-15]
+
 # Proposal: cte union table expansion
 
 ## 需求描述

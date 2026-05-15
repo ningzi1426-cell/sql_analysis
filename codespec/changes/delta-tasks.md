@@ -140,3 +140,25 @@
 ### 2026-05-13 修正：JoinRef 输出字段任务要求
 - **TASK-020 验收修正**：隐式 JOIN 测试不再期望 `join_type == "IMPLICIT_JOIN"`，而应断言 `is_implicit == True`，普通 WHERE 表间条件对应 `join_type == "INNER_JOIN"`，带 `(+)` 的条件对应 `join_type == "LEFT_JOIN"`。
 - **TASK-021 实现修正**：更新 `JoinRef` 数据模型与 parser 输出，新增 `is_implicit` 字段，并停止输出 `IMPLICIT_JOIN` 类型。
+
+## 2026-05-15 cte union table expansion
+
+### 变更摘要
+新增 2 项任务，先补充 UNION CTE 回归测试，再修复 parser 中 CTE 定义体只接受 `Select` 的限制。
+
+### 对 tasks.md 的变更
+- **TASK-022: 补充 UNION CTE 表引用和层次结构测试**
+  - Context: 在 `tests/test_parser.py` 中新增覆盖 `examples/243791.sql` 或等价精简 SQL 的测试，验证 `final AS (... UNION ALL ...)` 能被识别为 CTE。
+  - Acceptance:
+    - `final` 的 `table_type == "CTE"`，不是 `BASE_TABLE`。
+    - `final.nested_tables` 包含 UNION 分支中的 `rev_data` 引用。
+    - `hierarchy.children` 包含名为 `final` 的 `CTE_DEF`。
+    - `final` 的 CTE_DEF 子树包含 `UNION` 节点和两个 SELECT 分支。
+
+- **TASK-023: 修复 UNION CTE 定义收集与展开实现**
+  - Context: 修改 `sql_analysis/parser.py`，让 CTE 定义收集、CTE nested_tables 填充和 hierarchy 构建支持 `exp.Select | exp.Union`。必要时新增统一表提取辅助函数，避免在多个调用点重复类型分支。
+  - Acceptance:
+    - TASK-022 新增测试通过。
+    - `examples/243791.sql` 的 `tables` 输出能展开 `final -> rev_data`，并保留 `rev_data` 对底层物理表的展开能力。
+    - 现有 CTE、UNION、JOIN、隐式 JOIN 测试不回归。
+    - `uv run pytest --cov=sql_analysis --cov-report=term-missing` 通过，覆盖率不低于 80%。
