@@ -137,6 +137,11 @@ parse_sql(sql) → clean_sql(sql) → normalize_aliases(cleaned) → parse_one(n
 **Rationale**: 满足 FR-004 对 CTE 定义节点与主查询引用的可见性要求。
 **Implications**: 不改变 tables 中 CTE 的 `nested_tables` 逻辑。
 
+### Decision 17: CTE 定义体支持 Select 和 Union
+**Choice**: `_collect_cte_defs()` 将 CTE 定义体类型从仅 `exp.Select` 扩展为 `exp.Select | exp.Union`。所有使用 `cte_defs` 的地方通过统一辅助函数按节点类型分发到 `_extract_tables_from_select()` 或 `_extract_tables_from_union()`。
+**Rationale**: sqlglot 会把 `WITH cte AS (SELECT ... UNION ALL SELECT ...)` 的 CTE 体表示为 `exp.Union`。只收集 `Select` 会导致 CTE 引用被误判为基表，且 `nested_tables` 和 hierarchy 缺失。
+**Implications**: 表引用提取、CTE `nested_tables` 填充、hierarchy 的 `CTE_DEF` 子树都需要接受 `Select | Union`。当 CTE 体为 `Union` 时，`CTE_DEF.children` 应包含 `_extract_hierarchy(union, ...)` 的结果，让 UNION 的左右 SELECT 分支保留在层次结构中。本次不改变字段血缘、UNION 去重或别名语义校验。
+
 ### Decision 15: 预定义 JSON Schema 用于输出合同验证
 **Choice**: 在测试中维护 parse result 的 JSON Schema，并覆盖成功输出和错误输出。生产 `parse_sql()` 仍返回 plain dict，不引入运行时 schema 校验依赖。
 **Rationale**: FR-006 要求输出可校验，而不是每次解析必须执行校验；测试级 schema 能证明输出合同稳定，同时避免新增运行时依赖。

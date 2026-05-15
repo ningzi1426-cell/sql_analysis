@@ -56,6 +56,11 @@ base tables, derived tables (subqueries), CTEs, and views.
 - **WHEN** 调用解析器对该语句进行分析
 - **THEN** 返回 `active`（类型 CTE，引用自 `users`），且 `users` 为 BASE_TABLE，schema 均为空
 
+#### Scenario: UNION CTE 的表引用展开
+- **GIVEN** 输入 SQL 包含 `final AS (SELECT id FROM rev_data UNION ALL SELECT id FROM rev_data)`，主查询 `SELECT * FROM final f`
+- **WHEN** 调用解析器对该语句进行分析
+- **THEN** `final` 返回为 CTE 类型而不是 BASE_TABLE，且 `nested_tables` 包含 UNION 分支中的 `rev_data` 引用
+
 #### Scenario: 无 FROM 子句的查询
 - **GIVEN** 输入 SQL 为 `SELECT 1 AS id`（无 FROM 子句，部分数据库合法）
 - **WHEN** 调用解析器对该语句进行分析
@@ -187,12 +192,17 @@ structure formed by subqueries and CTEs, recording nesting relationships.
 #### Scenario: 含 CTE 的查询
 - **GIVEN** 输入 SQL 为 `WITH cte AS (SELECT id FROM users WHERE status=1) SELECT * FROM cte`
 - **WHEN** 调用解析器对该语句进行分析
-- **THEN** 返回的结构包含 1 个 CTE 定义节点 `cte`（内部为 SELECT），以及 1 个主查询节点引用该 CTE；CTE 定义节点类型为 `CTE_DEF`
+- **THEN** 返回的结构包含 1 个 CTE 定义节点 `cte`（内部为 SELECT 或 UNION），以及 1 个主查询节点引用该 CTE；CTE 定义节点类型为 `CTE_DEF`
 
 #### Scenario: 多层嵌套子查询
 - **GIVEN** 输入 SQL 为 `SELECT * FROM (SELECT id FROM (SELECT id FROM users) t1) t2`
 - **WHEN** 调用解析器对该语句进行分析
 - **THEN** 返回的嵌套深度为 3，父子关系与 SQL 中的嵌套顺序一致
+
+#### Scenario: UNION CTE 的层次结构
+- **GIVEN** 输入 SQL 包含 `final AS (SELECT id FROM rev_data UNION ALL SELECT id FROM rev_data)`
+- **WHEN** 调用解析器对该语句进行分析
+- **THEN** hierarchy 中包含名为 `final` 的 `CTE_DEF` 节点，其子树包含 UNION 节点，并将两个 SELECT 分支作为子节点
 
 #### Scenario: 包含 UNION 的查询
 - **GIVEN** 输入 SQL 为 `SELECT a.id FROM user1 a UNION ALL SELECT b.id FROM user1 b`

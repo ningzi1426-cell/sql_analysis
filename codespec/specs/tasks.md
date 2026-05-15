@@ -112,3 +112,21 @@
     - `join_type` 不再输出 `IMPLICIT_JOIN`。
     - 显式 INNER/LEFT/CROSS JOIN 输出 `is_implicit is False`。
     - `uv run pytest --cov=sql_analysis --cov-report=term-missing` 通过，覆盖率不低于 80%。
+
+## UNION CTE 表引用展开修复（FR-001/004）
+
+- [ ] **TASK-022**: 补充 UNION CTE 表引用和层次结构测试
+  - Context: 在 `tests/test_parser.py` 中新增覆盖 `examples/243791.sql` 或等价精简 SQL 的测试，验证 `final AS (... UNION ALL ...)` 能被识别为 CTE。
+  - Acceptance:
+    - `final` 的 `table_type == "CTE"`，不是 `BASE_TABLE`。
+    - `final.nested_tables` 包含 UNION 分支中的 `rev_data` 引用。
+    - `hierarchy.children` 包含名为 `final` 的 `CTE_DEF`。
+    - `final` 的 CTE_DEF 子树包含 `UNION` 节点和两个 SELECT 分支。
+
+- [ ] **TASK-023**: 修复 UNION CTE 定义收集与展开实现
+  - Context: 修改 `sql_analysis/parser.py`，让 CTE 定义收集、CTE nested_tables 填充和 hierarchy 构建支持 `exp.Select | exp.Union`。必要时新增统一表提取辅助函数，避免在多个调用点重复类型分支。
+  - Acceptance:
+    - TASK-022 新增测试通过。
+    - `examples/243791.sql` 的 `tables` 输出能展开 `final -> rev_data`，并保留 `rev_data` 对底层物理表的展开能力。
+    - 现有 CTE、UNION、JOIN、隐式 JOIN 测试不回归。
+    - `uv run pytest --cov=sql_analysis --cov-report=term-missing` 通过，覆盖率不低于 80%。
