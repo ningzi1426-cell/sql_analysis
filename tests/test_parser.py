@@ -1,6 +1,7 @@
 """FR-001~004 & FR-006: 解析与结构化输出测试。"""
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -55,6 +56,18 @@ def _matches_json_type(value, expected_type):
         "null": type(None),
     }
     return isinstance(value, type_map[expected_type])
+
+
+def _find_hierarchy_node(node, node_type, name=None):
+    if node["node_type"] == node_type and (name is None or node.get("name") == name):
+        return node
+
+    for child in node.get("children", []):
+        found = _find_hierarchy_node(child, node_type, name)
+        if found is not None:
+            return found
+
+    return None
 
 
 # ── FR-001: 表引用提取 ────────────────────────────────────
@@ -131,6 +144,20 @@ class TestTableExtraction:
         cte_tables = [t for t in tables if t["table_type"] == "CTE"]
         assert len(cte_tables) >= 1
         assert cte_tables[0]["name"] == "active"
+
+    def test_union_cte_table_expansion_243791_sql(self):
+        """UNION CTE 被识别为 CTE，并展开 UNION 分支表引用。"""
+        sql = Path("examples/243791.sql").read_text(encoding="utf-8")
+        result = parse_sql(sql)
+        assert result["error"] is None
+
+        final_tables = [t for t in result["tables"] if t["name"] == "final"]
+        assert len(final_tables) == 1
+        final = final_tables[0]
+        assert final["table_type"] == "CTE"
+
+        nested_names = [t["name"] for t in final["nested_tables"]]
+        assert nested_names.count("rev_data") == 2
 
     def test_no_from_clause(self):
         """无 FROM 子句的查询返回空列表。"""
@@ -295,8 +322,6 @@ class TestJoinExtraction:
 
     def test_implicit_join_230278_sql_split(self):
         """230278.sql 的 WHERE 表间条件拆分为多条隐式 JOIN。"""
-        from pathlib import Path
-
         sql = Path("examples/230278.sql").read_text(encoding="utf-8")
         result = parse_sql(sql)
         assert result["error"] is None
@@ -351,6 +376,22 @@ class TestHierarchyExtraction:
         ]
         assert len(cte_nodes) == 1
         assert cte_nodes[0]["name"] == "cte"
+
+    def test_union_cte_hierarchy_243791_sql(self):
+        """UNION CTE 的 hierarchy 包含 CTE_DEF 与 UNION 分支。"""
+        sql = Path("examples/243791.sql").read_text(encoding="utf-8")
+        result = parse_sql(sql)
+        assert result["error"] is None
+
+        final_node = _find_hierarchy_node(result["hierarchy"], "CTE_DEF", "final")
+        assert final_node is not None
+
+        union_node = _find_hierarchy_node(final_node, "UNION")
+        assert union_node is not None
+        assert [child["node_type"] for child in union_node["children"]] == [
+            "SELECT",
+            "SELECT",
+        ]
 
     def test_triple_nesting(self):
         """多层嵌套子查询 — depth=3。"""

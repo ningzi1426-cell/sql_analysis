@@ -115,7 +115,7 @@
 
 ## UNION CTE 表引用展开修复（FR-001/004）
 
-- [ ] **TASK-022**: 补充 UNION CTE 表引用和层次结构测试
+- [x] **TASK-022**: 补充 UNION CTE 表引用和层次结构测试 — 完成于 2026-05-15
   - Context: 在 `tests/test_parser.py` 中新增覆盖 `examples/243791.sql` 或等价精简 SQL 的测试，验证 `final AS (... UNION ALL ...)` 能被识别为 CTE。
   - Acceptance:
     - `final` 的 `table_type == "CTE"`，不是 `BASE_TABLE`。
