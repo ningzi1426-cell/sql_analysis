@@ -1,53 +1,42 @@
-[PROCESSED: 2026-05-13]
-
-# Proposal: implicit join splitting
+# Proposal: cte union table expansion
 
 ## 需求描述
 
-修复 FR-003 中隐式 JOIN 识别的细粒度拆分问题。当前 parser 能识别 `WHERE` 中存在隐式关联，但在多表、多条件场景下会把完整 WHERE 条件复制到多条 JOIN 上，并且左表可能固定成 FROM 的第一个表，导致关系不准确。同时，`join_type` 不应再输出 `IMPLICIT_JOIN`；连接类型应归类为 `INNER_JOIN`、`LEFT_JOIN` 等语义类型，是否来自 WHERE 隐式 JOIN 由独立字段承载。
+修复 CTE 定义体为 `UNION` / `UNION ALL` 时，解析结果中 `tables`
+和 `hierarchy` 展开不完整的问题。
 
-典型问题来自 `examples/230278.sql`：
+当前 parser 只把 CTE 定义体为 `SELECT` 的节点收集到 `cte_defs`。
+当 SQL 包含如下结构时：
 
 ```sql
-FROM ht, lt, (...) s2, gl
-WHERE
-    ht.ae_header_id = lt.ae_header_id
-    AND lt.ae_header_id = s2.ae_header_id
-    AND lt.ae_line_num = s2.ae_line_num
-    AND ht.je_transfer_status_code <> 'NT'
-    AND ht.ledger_short_name = gl.ledger_short_name
+WITH final AS (
+    SELECT ... FROM rev_data r
+    UNION ALL
+    SELECT ... FROM rev_data r
+)
+SELECT ... FROM final f
 ```
 
-期望输出应按表间比较条件拆分隐式 JOIN：
+`final` 在 sqlglot AST 中是 `exp.Union`，因此没有被识别为 CTE
+定义。后续表引用提取会把 `final` 误判为 `BASE_TABLE`，且
+`nested_tables` 为空；层次结构中也缺少 `final` 的 `CTE_DEF` 节点。
 
-- `ht` -> `lt`，条件 `ht.ae_header_id = lt.ae_header_id`
-- `lt` -> `s2`，条件 `lt.ae_header_id = s2.ae_header_id`
-- `lt` -> `s2`，条件 `lt.ae_line_num = s2.ae_line_num`
-- `ht` -> `gl`，条件 `ht.ledger_short_name = gl.ledger_short_name`
-
-非表间过滤条件（如 `ht.je_transfer_status_code <> 'NT'`）不生成 JOIN。
-
-不在本次范围内：
-
-- 不做 GROUP BY/SELECT 中未知别名的语义校验，例如 `ss2t.sr1`。
-- 不重构显式 JOIN 的整体提取逻辑，除非为避免回归需要小幅调整共用辅助函数。
-- 不修改数据模型字段结构。
+本次变更只修复 CTE 定义体为 `SELECT` 或 `UNION` 时的统一收集和展开。
+不做字段血缘、别名语义校验、UNION 去重策略或其他解析能力扩展。
 
 ## 影响范围
 
-- **spec.md**：澄清 FR-003 的 WHERE 隐式连接场景，要求按表间比较条件拆分多条 `IMPLICIT_JOIN`，过滤条件不生成 JOIN。
-- **design.md**：补充隐式 JOIN 拆分策略：递归拆分 WHERE 的 AND 条件，只为左右两侧均有不同表限定符的比较表达式生成关系；新增 `is_implicit` 字段承载隐式来源。
+- **spec.md**：补充 FR-001 / FR-004 对 UNION CTE 的表引用和层次结构要求。
+- **design.md**：补充 CTE 定义收集和展开应支持 `Select | Union` 的设计决策。
 - **tasks.md**：新增本次修复任务。
-- **sql_analysis/models.py**：更新 `JoinRef` 输出结构，新增 `is_implicit` 字段。
-- **sql_analysis/parser.py**：修复 `_extract_joins()` / 相关辅助函数的隐式 JOIN 提取逻辑，并停止输出 `join_type = IMPLICIT_JOIN`。
-- **tests/test_parser.py**：新增或收紧多表 WHERE 隐式 JOIN 测试，覆盖 `230278.sql` 代表场景。
+- **sql_analysis/parser.py**：修复 CTE 定义收集、CTE nested_tables 展开、CTE hierarchy 构建中只接受 `Select` 的限制。
+- **tests/test_parser.py**：新增覆盖 `examples/243791.sql` 代表场景的回归测试。
 
 ## 验收标准
 
-- `WHERE a.id = b.a_id AND b.id = c.b_id AND a.status <> 'X'` 返回 2 条隐式 JOIN，`is_implicit == true`，`join_type == INNER_JOIN`，不为 `a.status <> 'X'` 生成 JOIN。
-- `examples/230278.sql` 至少返回以下隐式关系：`ht -> lt`、`lt -> s2`（两条条件）、`ht -> gl`。
-- 带 Oracle `(+)` 的条件（如 `t1.id = t2.t1_id(+)`）返回 `is_implicit == true`，左表 `t1`，右表 `t2`，`join_type == LEFT_JOIN`。
-- 每条隐式 JOIN 的 `condition` 为对应的单条表间比较条件，而不是完整 WHERE 条件。
-- 每条隐式 JOIN 的 `conditions` 只包含该条条件。
-- 现有显式 INNER/LEFT/CROSS JOIN 测试不回归。
+- `examples/243791.sql` 解析结果中，`final` 被识别为 `CTE` 而不是 `BASE_TABLE`。
+- `final` 的 `nested_tables` 能展开其 UNION 分支中的 `rev_data` 引用。
+- `rev_data` 的 CTE 展开仍能包含其底层物理表，如 `ogg_hah_je_batch_8863_vi`、`ogg_hah_je_header_8863_vi`、`ogg_hah_je_line_8863_vi`、`ogg_gsc_ledgers_t_8863`、`dwr_dim_product_d` 和 `ebg_contract`。
+- `hierarchy` 中包含 `final` 的 `CTE_DEF` 节点，且该节点子树体现 UNION 的两个分支。
+- 现有 CTE、UNION、JOIN、隐式 JOIN 测试不回归。
 - `uv run pytest --cov=sql_analysis --cov-report=term-missing` 通过，覆盖率不低于 80%。
