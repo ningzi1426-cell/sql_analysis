@@ -236,8 +236,8 @@ def _extract_tables_from_select(
     if top_level:
         for subquery in select.find_all(exp.Subquery):
             inner = subquery.this
-            if isinstance(inner, exp.Select):
-                nested = _extract_tables_from_select(
+            if isinstance(inner, (exp.Select, exp.Union)):
+                nested = _extract_tables_from_query(
                     inner, cte_names, top_level=False
                 )
                 t = TableRef(
@@ -252,17 +252,54 @@ def _extract_tables_from_select(
 
 
 def _extract_tables_from_union(
-    union: exp.Union, cte_names: set[str]
+    union: exp.Union,
+    cte_names: set[str],
+    top_level: bool = True,
 ) -> list[dict]:
     all_tables: list[dict] = []
 
     for branch in (union.this, union.expression):
-        if isinstance(branch, exp.Select):
-            all_tables.extend(_extract_tables_from_select(branch, cte_names))
-        elif isinstance(branch, exp.Union):
-            all_tables.extend(_extract_tables_from_union(branch, cte_names))
+        if isinstance(branch, (exp.Select, exp.Union)):
+            all_tables.extend(
+                _extract_tables_from_query(branch, cte_names, top_level)
+            )
 
     return all_tables
+
+
+def _extract_tables_from_query(
+    node: exp.Select | exp.Union,
+    cte_names: set[str],
+    top_level: bool = True,
+) -> list[dict]:
+    """按查询节点类型提取表引用，统一处理 SELECT 与 UNION。"""
+    if isinstance(node, exp.Select):
+        return _extract_tables_from_select(node, cte_names, top_level)
+    return _extract_tables_from_union(node, cte_names, top_level)
+
+
+def _populate_cte_nested_tables(
+    tables: list[dict],
+    cte_defs: dict[str, exp.Select | exp.Union],
+    cte_names: set[str],
+    resolving: set[str] | None = None,
+) -> None:
+    """递归填充 CTE 引用的 nested_tables，保留 CTE 内部来源。"""
+    current = set() if resolving is None else resolving
+
+    for table in tables:
+        if table["table_type"] != "CTE":
+            continue
+
+        cte_name = table["name"].lower()
+        if cte_name not in cte_defs or cte_name in current:
+            continue
+
+        nested = _extract_tables_from_query(
+            cte_defs[cte_name], cte_names, top_level=False
+        )
+        table["nested_tables"] = nested
+        _populate_cte_nested_tables(nested, cte_defs, cte_names, current | {cte_name})
 
 
 # ── FR-002: 字段引用提取 ──────────────────────────────────
@@ -506,7 +543,7 @@ def _condition_sql(expr: exp.Expression) -> str:
 
 def _extract_hierarchy(
     node: exp.Expression,
-    cte_defs: dict[str, exp.Select],
+    cte_defs: dict[str, exp.Select | exp.Union],
     depth: int = 0,
 ) -> dict:
     """递归构建查询层次结构树。"""
@@ -526,7 +563,7 @@ def _extract_hierarchy(
         for join_node in node.find_all(exp.Join):
             if isinstance(join_node.this, exp.Subquery):
                 inner = join_node.this.this
-                if isinstance(inner, exp.Select):
+                if isinstance(inner, (exp.Select, exp.Union)):
                     current.children.append(
                         _extract_hierarchy(inner, cte_defs, depth + 1)
                     )
@@ -537,7 +574,7 @@ def _extract_hierarchy(
         if cte_nodes:
             for cte in cte_nodes:
                 inner = cte.this
-                if isinstance(inner, exp.Select):
+                if isinstance(inner, (exp.Select, exp.Union)):
                     cte_name = cte.alias if isinstance(cte.alias, str) else str(cte.alias)
                     cte_child = HierarchyNode(
                         node_type="CTE_DEF",
@@ -561,7 +598,7 @@ def _extract_hierarchy(
 
 def _find_child_selects(
     source: exp.Expression,
-    cte_defs: dict[str, exp.Select],
+    cte_defs: dict[str, exp.Select | exp.Union],
     depth: int,
 ) -> list[dict]:
     """从 FROM 源中查找子查询并递归处理。"""
@@ -587,13 +624,13 @@ def _find_child_selects(
 # ── 收集 CTE 定义 ─────────────────────────────────────────
 
 
-def _collect_cte_defs(ast: exp.Expression) -> dict[str, exp.Select]:
-    """从 AST 收集所有 CTE 名称到其定义 SELECT 的映射。"""
-    cte_defs: dict[str, exp.Select] = {}
+def _collect_cte_defs(ast: exp.Expression) -> dict[str, exp.Select | exp.Union]:
+    """从 AST 收集所有 CTE 名称到其定义查询节点的映射。"""
+    cte_defs: dict[str, exp.Select | exp.Union] = {}
     for cte in ast.find_all(exp.CTE):
         name = cte.alias if isinstance(cte.alias, str) else str(cte.alias)
         inner = cte.this
-        if isinstance(inner, exp.Select):
+        if isinstance(inner, (exp.Select, exp.Union)):
             cte_defs[name.lower()] = inner
     return cte_defs
 
@@ -633,20 +670,13 @@ def parse_sql(sql: str) -> dict:
     cte_names = set(cte_defs.keys())
 
     # FR-001: 提取表引用
-    if isinstance(ast, exp.Select):
-        tables = _extract_tables_from_select(ast, cte_names)
-    elif isinstance(ast, exp.Union):
-        tables = _extract_tables_from_union(ast, cte_names)
+    if isinstance(ast, (exp.Select, exp.Union)):
+        tables = _extract_tables_from_query(ast, cte_names)
     else:
         tables = []
 
     # 为 CTE 引用填充 nested_tables
-    for t in tables:
-        if t["table_type"] == "CTE" and t["name"].lower() in cte_defs:
-            inner_select = cte_defs[t["name"].lower()]
-            t["nested_tables"] = _extract_tables_from_select(
-                inner_select, cte_names, top_level=False
-            )
+    _populate_cte_nested_tables(tables, cte_defs, cte_names)
 
     # FR-002: 提取字段引用
     columns = _extract_columns_recursive(ast)

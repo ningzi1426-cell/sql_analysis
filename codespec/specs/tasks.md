@@ -123,7 +123,7 @@
     - `hierarchy.children` 包含名为 `final` 的 `CTE_DEF`。
     - `final` 的 CTE_DEF 子树包含 `UNION` 节点和两个 SELECT 分支。
 
-- [ ] **TASK-023**: 修复 UNION CTE 定义收集与展开实现
+- [x] **TASK-023**: 修复 UNION CTE 定义收集与展开实现 — 完成于 2026-05-15
   - Context: 修改 `sql_analysis/parser.py`，让 CTE 定义收集、CTE nested_tables 填充和 hierarchy 构建支持 `exp.Select | exp.Union`。必要时新增统一表提取辅助函数，避免在多个调用点重复类型分支。
   - Acceptance:
     - TASK-022 新增测试通过。

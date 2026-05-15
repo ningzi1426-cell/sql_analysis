@@ -159,6 +159,17 @@ class TestTableExtraction:
         nested_names = [t["name"] for t in final["nested_tables"]]
         assert nested_names.count("rev_data") == 2
 
+        rev_data = final["nested_tables"][0]
+        rev_nested_names = {t["name"] for t in rev_data["nested_tables"]}
+        assert {
+            "ogg_hah_je_batch_8863_vi",
+            "ogg_hah_je_header_8863_vi",
+            "ogg_hah_je_line_8863_vi",
+            "ogg_gsc_ledgers_t_8863",
+            "dwr_dim_product_d",
+            "ebg_contract",
+        }.issubset(rev_nested_names)
+
     def test_no_from_clause(self):
         """无 FROM 子句的查询返回空列表。"""
         result = parse_sql("SELECT 1 AS id")
@@ -335,7 +346,7 @@ class TestJoinExtraction:
             ("ht", "lt", "INNER_JOIN", "ht.ae_header_id = lt.ae_header_id"),
             ("lt", "s2", "INNER_JOIN", "lt.ae_header_id = s2.ae_header_id"),
             ("lt", "s2", "INNER_JOIN", "lt.ae_line_num = s2.ae_line_num"),
-            ("ht", "gl", "INNER_JOIN", "ht.ledger_short_name = gl.ledger_short_name"),
+            ("ht", "gl", "LEFT_JOIN", "ht.ledger_short_name = gl.ledger_short_name"),
         ]
         assert actual == expected
 
